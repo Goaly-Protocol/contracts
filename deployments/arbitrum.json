@@ -1,0 +1,15 @@
+{
+  "chainId": 42161,
+  "network": "arbitrum-one",
+  "deployBlock": 479593944,
+  "contracts": {
+    "GoalyVault": "0x30042f0225fc513ba22551afcd8d3a88d3e128d1",
+    "PredictionPool": "0x9d77f5e1d5afe5258ca16f808dc5ba1e9f68437f",
+    "GoalyVaultComposer": "0x2fff7ca8686cfa6387b4958ea70b2fae0285d56a"
+  },
+  "external": {
+    "USDT0": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+    "morphoVault": "0x139250CdB310D657eAC506c7C7FC6AcDE34Af1ec",
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+  }
+}
