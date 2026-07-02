@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity 0.8.24;
 
-import {IERC20} from "./interfaces/IERC20.sol";
-import {IERC4626} from "./interfaces/IERC4626.sol";
-import {SafeTransfer} from "./libraries/SafeTransfer.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title GoalYieldVault
 /// @notice Self-custodial deposit vault for GoalYield. Deposited USDT0 is supplied to a Morpho
@@ -11,13 +12,12 @@ import {SafeTransfer} from "./libraries/SafeTransfer.sol";
 ///         that debt is only ever repaid by the yield their own principal earns — never by the
 ///         principal itself. Principal unlocks for withdrawal once yield has cleared the debt,
 ///         so a player can never lose their deposit, only their future yield.
-contract GoalYieldVault {
-    using SafeTransfer for address;
+contract GoalYieldVault is Ownable {
+    using SafeERC20 for IERC20;
 
     IERC20 public immutable asset; // USDT0
     IERC4626 public immutable yieldVault; // Morpho MetaMorpho vault
 
-    address public owner;
     mapping(address => bool) public settlers;
 
     uint256 public totalPrincipal;
@@ -33,9 +33,7 @@ contract GoalYieldVault {
     event DebtCharged(address indexed user, uint256 amount, uint256 totalDebt);
     event SettlerSet(address indexed settler, bool enabled);
     event Skimmed(address indexed to, uint256 assets, uint256 shares);
-    event OwnershipTransferred(address indexed from, address indexed to);
 
-    error NotOwner();
     error NotSettler();
     error ZeroAmount();
     error ZeroAddress();
@@ -43,22 +41,15 @@ contract GoalYieldVault {
     error NothingToWithdraw();
     error AssetMismatch();
 
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
-    }
-
     modifier onlySettler() {
         if (!settlers[msg.sender]) revert NotSettler();
         _;
     }
 
-    constructor(IERC20 _asset, IERC4626 _yieldVault) {
+    constructor(IERC20 _asset, IERC4626 _yieldVault) Ownable(msg.sender) {
         if (_yieldVault.asset() != address(_asset)) revert AssetMismatch();
         asset = _asset;
         yieldVault = _yieldVault;
-        owner = msg.sender;
-        emit OwnershipTransferred(address(0), msg.sender);
     }
 
     // ── Admin ──
@@ -69,19 +60,13 @@ contract GoalYieldVault {
         emit SettlerSet(settler, enabled);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert ZeroAddress();
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
-    }
-
     // ── Deposits ──
 
     /// @notice Deposit `assets` USDT0 as principal; it is supplied to the Morpho vault to earn yield.
     function deposit(uint256 assets) external returns (uint256 shares) {
         if (assets == 0) revert ZeroAmount();
-        address(asset).safeTransferFrom(msg.sender, address(this), assets);
-        address(asset).safeApprove(address(yieldVault), assets);
+        asset.safeTransferFrom(msg.sender, address(this), assets);
+        asset.forceApprove(address(yieldVault), assets);
         shares = yieldVault.deposit(assets, address(this));
 
         principalOf[msg.sender] += assets;

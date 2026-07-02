@@ -2,9 +2,9 @@
 pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalYieldVault} from "../../src/GoalYieldVault.sol";
-import {IERC20} from "../../src/interfaces/IERC20.sol";
-import {IERC4626} from "../../src/interfaces/IERC4626.sol";
 
 // Integration test against the REAL Morpho "Gauntlet USDT0 Core" vault on Arbitrum One.
 // Runs only when ARBITRUM_RPC_URL is set (otherwise it no-ops), so `forge test` stays green
@@ -36,7 +36,7 @@ contract MorphoForkTest is Test {
             return;
         }
 
-        uint256 amount = 100 * (10 ** IERC20(usdt0).decimals());
+        uint256 amount = 100e6; // USDT0 has 6 decimals
         deal(usdt0, user, amount);
 
         vm.startPrank(user);
