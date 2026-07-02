@@ -41,12 +41,11 @@ contract MorphoForkTest is Test {
 
         vm.startPrank(user);
         IERC20(usdt0).approve(address(vault), amount);
-        uint256 shares = vault.deposit(amount);
+        vault.deposit(amount, user);
         vm.stopPrank();
 
-        assertGt(shares, 0, "no shares minted");
-        assertEq(vault.principalOf(user), amount);
-        // The vault's Morpho position should be worth ~the deposited principal (minus rounding).
+        // Deposit mints goUSDT 1:1 and the vault's Morpho position is worth ~the principal.
+        assertEq(vault.balanceOf(user), amount);
         assertApproxEqAbs(vault.totalAssets(), amount, 5);
     }
 }

@@ -5,22 +5,23 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
-import {IGoalyVault} from "./interfaces/IGoalyVault.sol";
+
+interface IGoalyVaultDeposit {
+    function deposit(uint256 assets, address receiver) external returns (uint256);
+}
 
 /// @title GoalyVaultComposer
 /// @notice LayerZero V2 composer that turns a cross-chain USDT0 transfer into a Goaly deposit.
 ///         A user on any chain sends USDT0 via its OFT to Arbitrum, targeting this composer with a
 ///         compose message carrying their hub-chain address. The USDT0 OFT delivers the tokens here
-///         and the LayerZero Endpoint calls {lzCompose}; we then deposit them into {GoalyVault} and
-///         credit the origin-chain user. This is how "deposit from any chain" works.
+///         and the LayerZero Endpoint calls {lzCompose}; we then deposit them into {GoalyVault},
+///         minting goUSDT to the origin-chain user. This is how "deposit from any chain" works.
 contract GoalyVaultComposer is ILayerZeroComposer {
     using SafeERC20 for IERC20;
 
     IERC20 public immutable usdt0;
-    IGoalyVault public immutable vault;
-    /// @notice The LayerZero Endpoint — the only permitted caller of {lzCompose}.
+    IGoalyVaultDeposit public immutable vault;
     address public immutable endpoint;
-    /// @notice The USDT0 OFT contract — the only accepted `_from`.
     address public immutable oft;
 
     event CrossChainDeposit(address indexed recipient, uint256 amount, bytes32 guid);
@@ -28,12 +29,11 @@ contract GoalyVaultComposer is ILayerZeroComposer {
     error NotEndpoint();
     error UnexpectedOft();
 
-    constructor(IERC20 _usdt0, IGoalyVault _vault, address _endpoint, address _oft) {
+    constructor(IERC20 _usdt0, IGoalyVaultDeposit _vault, address _endpoint, address _oft) {
         usdt0 = _usdt0;
         vault = _vault;
         endpoint = _endpoint;
         oft = _oft;
-        // Pre-approve the vault to pull delivered USDT0 on deposit.
         _usdt0.forceApprove(address(_vault), type(uint256).max);
     }
 
@@ -52,7 +52,7 @@ contract GoalyVaultComposer is ILayerZeroComposer {
         address recipient = abi.decode(OFTComposeMsgCodec.composeMsg(_message), (address));
 
         // Tokens were delivered to this contract by the OFT prior to this call.
-        vault.depositFor(recipient, amount);
+        vault.deposit(amount, recipient);
         emit CrossChainDeposit(recipient, amount, _guid);
     }
 }

@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyVault} from "../src/GoalyVault.sol";
-import {IGoalyVault} from "../src/interfaces/IGoalyVault.sol";
 import {PredictionPool} from "../src/PredictionPool.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockERC4626} from "./mocks/MockERC4626.sol";
@@ -13,7 +12,7 @@ import {MockERC4626} from "./mocks/MockERC4626.sol";
 contract PredictionPoolTest is Test {
     MockERC20 internal usdt0;
     MockERC4626 internal morpho;
-    GoalyVault internal vault;
+    GoalyVault internal vault; // goUSDT
     PredictionPool internal pool;
 
     address internal alice = address(0xA11CE);
@@ -25,12 +24,21 @@ contract PredictionPoolTest is Test {
         usdt0 = new MockERC20("USDT0", "USDT0", 6);
         morpho = new MockERC4626(usdt0);
         vault = new GoalyVault(IERC20(address(usdt0)), IERC4626(address(morpho)));
-        pool = new PredictionPool(IERC20(address(usdt0)), IGoalyVault(address(vault)), 250); // 2.5% fee
-        vault.setSettler(address(pool), true); // pool may charge credit
+        pool = new PredictionPool(IERC20(address(vault)), IERC20(address(usdt0)), 250); // 2.5% fee
 
-        usdt0.mint(address(this), 100 * UNIT);
-        usdt0.approve(address(pool), type(uint256).max);
+        _fund(alice, 100 * UNIT);
+        _fund(bob, 100 * UNIT);
         pool.createMarket(MARKET, uint64(block.timestamp + 1 days));
+    }
+
+    /// Give `user` goUSDT (deposit into the vault) and approve the pool to stake it.
+    function _fund(address user, uint256 amount) internal {
+        usdt0.mint(user, amount);
+        vm.startPrank(user);
+        usdt0.approve(address(vault), type(uint256).max);
+        vault.deposit(amount, user);
+        IERC20(address(vault)).approve(address(pool), type(uint256).max);
+        vm.stopPrank();
     }
 
     function _place(address user, PredictionPool.Outcome outcome, uint256 amount) internal {
@@ -38,33 +46,40 @@ contract PredictionPoolTest is Test {
         pool.placePrediction(MARKET, outcome, amount);
     }
 
-    function test_PlaceChargesCreditDebt() public {
+    function _fundPrize(uint256 amount) internal {
+        usdt0.mint(address(this), amount);
+        usdt0.approve(address(pool), amount);
+        pool.fundPrize(MARKET, amount);
+    }
+
+    function test_PlaceLocksGoUsdt() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
-        assertEq(vault.debtOf(alice), 10 * UNIT);
+        assertEq(vault.balanceOf(alice), 90 * UNIT); // 10 goUSDT locked
+        assertEq(vault.balanceOf(address(pool)), 10 * UNIT);
         assertEq(pool.stakeOf(MARKET, alice), 10 * UNIT);
     }
 
-    function test_WinnersSplitPrizeAndLosersLoseNothing() public {
+    function test_NoLoss_WinnerGetsPrizeLoserGetsStakeBack() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
         _place(bob, PredictionPool.Outcome.AWAY, 10 * UNIT);
-
         pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
-        pool.fundPrize(MARKET, 5 * UNIT); // 5 USDT0 of yield as the prize
+        _fundPrize(5 * UNIT);
 
+        // Winner: stake returned + prize (minus 2.5% fee)
         vm.prank(alice);
-        uint256 payout = pool.claim(MARKET);
-        uint256 expected = 5 * UNIT - (5 * UNIT * 250) / 10_000; // prize minus 2.5% fee
-        assertEq(payout, expected);
-        assertEq(usdt0.balanceOf(alice), expected);
+        (uint256 aStake, uint256 aPrize) = pool.claim(MARKET);
+        assertEq(aStake, 10 * UNIT);
+        assertEq(aPrize, 5 * UNIT - (5 * UNIT * 250) / 10_000); // 4.875
+        assertEq(vault.balanceOf(alice), 100 * UNIT); // goUSDT back to full
+        assertEq(usdt0.balanceOf(alice), aPrize);
 
-        // Loser: nothing to claim, but nothing lost — only credit debt (repaid by their own yield).
-        assertEq(pool.payoutOf(MARKET, bob), 0);
-        vm.expectRevert(PredictionPool.NothingToClaim.selector);
+        // Loser: stake returned in full, no prize — never lost principal
         vm.prank(bob);
-        pool.claim(MARKET);
-
-        assertEq(vault.debtOf(alice), 10 * UNIT);
-        assertEq(vault.debtOf(bob), 10 * UNIT);
+        (uint256 bStake, uint256 bPrize) = pool.claim(MARKET);
+        assertEq(bStake, 10 * UNIT);
+        assertEq(bPrize, 0);
+        assertEq(vault.balanceOf(bob), 100 * UNIT);
+        assertEq(usdt0.balanceOf(bob), 0);
     }
 
     function test_CannotPredictTwice() public {
@@ -80,7 +95,7 @@ contract PredictionPoolTest is Test {
     }
 
     function test_SettleRequiresOracleRole() public {
-        vm.expectRevert(); // AccessControlUnauthorizedAccount
+        vm.expectRevert();
         vm.prank(alice);
         pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
     }
@@ -88,7 +103,7 @@ contract PredictionPoolTest is Test {
     function test_DoubleClaimReverts() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
         pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
-        pool.fundPrize(MARKET, 5 * UNIT);
+        _fundPrize(5 * UNIT);
         vm.prank(alice);
         pool.claim(MARKET);
         vm.expectRevert(PredictionPool.AlreadyClaimed.selector);

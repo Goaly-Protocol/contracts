@@ -5,24 +5,21 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {IGoalyVault} from "./interfaces/IGoalyVault.sol";
 
 /// @title PredictionPool
-/// @notice No-loss football prediction markets. Placing a prediction borrows *credit* against the
-///         player's GoalyVault position (recorded as debt that their own yield repays) — no
-///         principal is ever staked. Each market's prize is funded from protocol yield; winners
-///         split that prize pro-rata by their credit stake. Losers simply win nothing; they never
-///         lose their deposit. This contract holds the ORACLE role for market results and must be
-///         granted GoalyVault's SETTLER_ROLE to charge credit.
+/// @notice No-loss prediction markets. Players stake **goUSDT** (the GoalyVault receipt) on an
+///         outcome; the stake is locked during the market and **returned in full at claim** — no
+///         principal is ever lost. Winners additionally split a **USDT0 prize** (funded from vault
+///         yield) pro-rata by their stake, minus a protocol fee.
 contract PredictionPool is AccessControl, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     bytes32 public constant ORACLE_ROLE = keccak256("ORACLE_ROLE");
     uint256 internal constant BPS = 10_000;
 
-    IERC20 public immutable asset; // USDT0
-    IGoalyVault public immutable vault;
-    uint16 public immutable feeBps; // protocol fee on winnings
+    IERC20 public immutable stakeToken; // goUSDT
+    IERC20 public immutable prizeToken; // USDT0
+    uint16 public immutable feeBps;
 
     enum Outcome {
         HOME,
@@ -40,9 +37,9 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
         uint64 closeTime;
         Status status;
         Outcome result;
-        uint256 pot; // total credit staked
-        uint256 winningStake; // credit staked on the winning outcome (set at settle)
-        uint256 prize; // USDT0 funded from yield, split among winners
+        uint256 totalStake;
+        uint256 winningStake;
+        uint256 prize;
     }
 
     mapping(bytes32 marketId => Market) public markets;
@@ -53,10 +50,9 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
 
     event MarketCreated(bytes32 indexed marketId, uint64 closeTime);
     event PredictionPlaced(bytes32 indexed marketId, address indexed user, Outcome outcome, uint256 amount);
-    event MarketSettled(bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 pot);
+    event MarketSettled(bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 totalStake);
     event PrizeFunded(bytes32 indexed marketId, uint256 amount);
-    event PayoutClaimed(bytes32 indexed marketId, address indexed user, uint256 amount);
-    event Swept(address indexed to, uint256 amount);
+    event Claimed(bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize);
 
     error MarketExists();
     error MarketNotOpen();
@@ -65,25 +61,23 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     error ZeroAmount();
     error NotSettled();
     error AlreadyClaimed();
-    error NothingToClaim();
-    error ZeroAddress();
+    error NothingStaked();
 
-    constructor(IERC20 _asset, IGoalyVault _vault, uint16 _feeBps) {
-        if (address(_asset) == address(0) || address(_vault) == address(0)) revert ZeroAddress();
+    constructor(IERC20 _stakeToken, IERC20 _prizeToken, uint16 _feeBps) {
         require(_feeBps <= BPS, "fee too high");
-        asset = _asset;
-        vault = _vault;
+        stakeToken = _stakeToken;
+        prizeToken = _prizeToken;
         feeBps = _feeBps;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ORACLE_ROLE, msg.sender);
     }
 
-    // ── Oracle: market lifecycle ──
+    // ── Oracle ──
 
     function createMarket(bytes32 marketId, uint64 closeTime) external onlyRole(ORACLE_ROLE) {
         if (markets[marketId].status != Status.NONE) revert MarketExists();
         markets[marketId] =
-            Market({closeTime: closeTime, status: Status.OPEN, result: Outcome.HOME, pot: 0, winningStake: 0, prize: 0});
+            Market({closeTime: closeTime, status: Status.OPEN, result: Outcome.HOME, totalStake: 0, winningStake: 0, prize: 0});
         emit MarketCreated(marketId, closeTime);
     }
 
@@ -93,22 +87,22 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
         market.status = Status.SETTLED;
         market.result = result;
         market.winningStake = outcomeStake[marketId][uint8(result)];
-        emit MarketSettled(marketId, result, market.winningStake, market.pot);
+        emit MarketSettled(marketId, result, market.winningStake, market.totalStake);
     }
 
-    /// @notice Fund a market's prize from protocol yield (e.g. skimmed from the vault).
+    /// @notice Fund a market's prize with USDT0 (e.g. harvested vault yield).
     function fundPrize(bytes32 marketId, uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
         Market storage market = markets[marketId];
         if (market.status == Status.NONE) revert MarketNotOpen();
-        asset.safeTransferFrom(msg.sender, address(this), amount);
+        prizeToken.safeTransferFrom(msg.sender, address(this), amount);
         market.prize += amount;
         emit PrizeFunded(marketId, amount);
     }
 
     // ── Players ──
 
-    /// @notice Predict `outcome` for `marketId`, borrowing `amount` of credit (debt repaid by yield).
+    /// @notice Stake `amount` goUSDT on `outcome`. The stake is locked and returned in full at claim.
     function placePrediction(bytes32 marketId, Outcome outcome, uint256 amount) external nonReentrant {
         Market storage market = markets[marketId];
         if (market.status != Status.OPEN) revert MarketNotOpen();
@@ -116,45 +110,38 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
         if (amount == 0) revert ZeroAmount();
         if (stakeOf[marketId][msg.sender] != 0) revert AlreadyPredicted();
 
-        vault.chargeDebt(msg.sender, amount);
-
+        stakeToken.safeTransferFrom(msg.sender, address(this), amount);
         stakeOf[marketId][msg.sender] = amount;
         pickOf[marketId][msg.sender] = outcome;
         outcomeStake[marketId][uint8(outcome)] += amount;
-        market.pot += amount;
+        market.totalStake += amount;
         emit PredictionPlaced(marketId, msg.sender, outcome, amount);
     }
 
-    /// @notice A winner's claimable payout (prize share by stake, minus fee); 0 for losers.
-    function payoutOf(bytes32 marketId, address user) public view returns (uint256) {
+    /// @notice A winner's USDT0 prize share (0 for losers or unsettled markets).
+    function prizeOf(bytes32 marketId, address user) public view returns (uint256) {
         Market storage market = markets[marketId];
         if (market.status != Status.SETTLED) return 0;
         if (pickOf[marketId][user] != market.result) return 0;
         uint256 stake = stakeOf[marketId][user];
         if (stake == 0 || market.winningStake == 0 || market.prize == 0) return 0;
         uint256 gross = (market.prize * stake) / market.winningStake;
-        uint256 fee = (gross * feeBps) / BPS;
-        return gross - fee;
+        return gross - (gross * feeBps) / BPS;
     }
 
-    function claim(bytes32 marketId) external nonReentrant returns (uint256 amount) {
+    /// @notice Reclaim your staked goUSDT (always, no-loss) plus your USDT0 prize (if you won).
+    function claim(bytes32 marketId) external nonReentrant returns (uint256 stakeReturned, uint256 prize) {
         Market storage market = markets[marketId];
         if (market.status != Status.SETTLED) revert NotSettled();
         if (claimed[marketId][msg.sender]) revert AlreadyClaimed();
-        amount = payoutOf(marketId, msg.sender);
-        if (amount == 0) revert NothingToClaim();
+        stakeReturned = stakeOf[marketId][msg.sender];
+        if (stakeReturned == 0) revert NothingStaked();
+
         claimed[marketId][msg.sender] = true;
-        asset.safeTransfer(msg.sender, amount);
-        emit PayoutClaimed(marketId, msg.sender, amount);
-    }
+        prize = prizeOf(marketId, msg.sender);
 
-    // ── Admin ──
-
-    /// @notice Withdraw leftover balance (accrued fees / unclaimed dust) to `to`.
-    function sweep(address to) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (to == address(0)) revert ZeroAddress();
-        uint256 balance = asset.balanceOf(address(this));
-        asset.safeTransfer(to, balance);
-        emit Swept(to, balance);
+        stakeToken.safeTransfer(msg.sender, stakeReturned);
+        if (prize > 0) prizeToken.safeTransfer(msg.sender, prize);
+        emit Claimed(marketId, msg.sender, stakeReturned, prize);
     }
 }
