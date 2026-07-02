@@ -1,16 +1,16 @@
 {
   "chainId": 42161,
   "network": "arbitrum-one",
-  "deployBlock": 479610270,
+  "deployBlock": 479616669,
   "contracts": {
-    "GoalyVault": "0x811830E04753D6Ee1f4b78647a56cd005F7686dE",
-    "PredictionPool": "0x227596cee251C775b6E532CD226b45f0AB36DAa4",
-    "GoalyVaultComposer": "0x5290b2128dBd996c5b12026dE7010a5FBD7eDe54"
+    "GoalyVault": "0xD3Ec43F60E2AC1517c4DD80C0A23Ad8d902EAF0F",
+    "PredictionPool": "0xfECc20bdaa28681Bada577731B8A24F415cBCa87",
+    "GoalyVaultComposer": "0xF83c270f5CA29eCa91454Cfd1F9653f619F5d579"
   },
   "external": {
     "USDT0": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
     "morphoVault": "0x139250CdB310D657eAC506c7C7FC6AcDE34Af1ec",
     "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
   },
-  "notes": "GoalyVault uses internal-share accounting and supports migrateYieldVault (scalable to a new Morpho vault)."
+  "notes": "GoalyVault is goUSDT (ERC-20 receipt, 1:1 with USDT0, migratable Morpho backing). PredictionPool stakes goUSDT; prizes paid in USDT0 from harvested yield."
 }
