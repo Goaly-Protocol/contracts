@@ -11,36 +11,52 @@ import {IGoalyVault} from "./interfaces/IGoalyVault.sol";
 import {YieldMath} from "./libraries/YieldMath.sol";
 
 /// @title GoalyVault
-/// @notice Self-custodial deposit vault for Goaly. Deposited USDT0 is supplied to a Morpho
-///         ERC-4626 vault to earn yield. Players borrow prediction *credit* (tracked as debt);
-///         that debt is only ever repaid by the yield their own principal earns — never by the
-///         principal itself. Principal unlocks for withdrawal once yield has cleared the debt, so
-///         a player can never lose their deposit, only their future yield.
-/// @dev    Access is role-based (see {SETTLER_ROLE}); mutating flows are `nonReentrant` and
-///         deposits are `Pausable` for emergencies.
+/// @notice Self-custodial deposit vault for Goaly. Deposited USDT0 is supplied to a Morpho ERC-4626
+///         vault to earn yield. Players borrow prediction *credit* (tracked as debt); that debt is
+///         only ever repaid by the yield their own principal earns — never the principal itself.
+/// @dev    Accounting uses **internal shares** decoupled from the underlying Morpho shares, so the
+///         yield vault can be migrated ({migrateYieldVault}) if a Morpho vault is deprecated —
+///         users' claims are unaffected. Role-based access; mutating flows are `nonReentrant`.
 contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
-    /// @notice Role allowed to charge prediction credit as debt (granted to the prediction pool).
+    /// @notice Role allowed to charge prediction credit as debt (the prediction pool).
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
+    /// @notice Role allowed to migrate the underlying Morpho yield vault.
+    bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     IERC20 public immutable asset; // USDT0
-    IERC4626 public immutable yieldVault; // Morpho MetaMorpho vault
+    IERC4626 public yieldVault; // Morpho MetaMorpho vault (migratable)
 
     uint256 public totalPrincipal;
-    uint256 public totalShares;
-    uint256 public protocolShares; // yield shares retained after withdrawals
+    uint256 public totalShares; // internal shares
+    uint256 public protocolShares; // internal shares retained as protocol yield
 
     mapping(address account => Account data) private _accounts;
+
+    event YieldVaultMigrated(address indexed from, address indexed to, uint256 assets);
 
     constructor(IERC20 _asset, IERC4626 _yieldVault) {
         if (_yieldVault.asset() != address(_asset)) revert AssetMismatch();
         asset = _asset;
         yieldVault = _yieldVault;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _grantRole(MANAGER_ROLE, msg.sender);
     }
 
     // ── Views ──
+
+    /// @inheritdoc IGoalyVault
+    /// @notice Total assets currently redeemable for the Morpho shares the vault holds.
+    function totalAssets() public view returns (uint256) {
+        return yieldVault.convertToAssets(yieldVault.balanceOf(address(this)));
+    }
+
+    /// @notice Current asset value of a user's internal shares.
+    function valueOf(address user) public view returns (uint256) {
+        if (totalShares == 0) return 0;
+        return (totalAssets() * _accounts[user].shares) / totalShares;
+    }
 
     function accountOf(address user) external view returns (Account memory) {
         return _accounts[user];
@@ -60,8 +76,7 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     /// @inheritdoc IGoalyVault
     function yieldOf(address user) public view returns (uint256) {
-        uint256 value = yieldVault.convertToAssets(_accounts[user].shares);
-        return YieldMath.accruedYield(value, _accounts[user].principal);
+        return YieldMath.accruedYield(valueOf(user), _accounts[user].principal);
     }
 
     /// @inheritdoc IGoalyVault
@@ -76,7 +91,6 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     // ── Admin ──
 
-    /// @inheritdoc IGoalyVault
     function setSettler(address settler, bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (settler == address(0)) revert ZeroAddress();
         if (enabled) {
@@ -95,16 +109,29 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
         _unpause();
     }
 
+    /// @inheritdoc IGoalyVault
+    /// @notice Move the entire position to a new Morpho vault (e.g. if the current one is deprecated).
+    ///         Internal share accounting is unchanged, so user claims are preserved.
+    function migrateYieldVault(IERC4626 newYieldVault) external onlyRole(MANAGER_ROLE) nonReentrant {
+        if (newYieldVault.asset() != address(asset)) revert AssetMismatch();
+        IERC4626 old = yieldVault;
+        uint256 held = old.balanceOf(address(this));
+        uint256 assets = held > 0 ? old.redeem(held, address(this), address(this)) : 0;
+        if (assets > 0) {
+            asset.forceApprove(address(newYieldVault), assets);
+            newYieldVault.deposit(assets, address(this));
+        }
+        yieldVault = newYieldVault;
+        emit YieldVaultMigrated(address(old), address(newYieldVault), assets);
+    }
+
     // ── Deposits ──
 
-    /// @inheritdoc IGoalyVault
     function deposit(uint256 assets) external nonReentrant whenNotPaused returns (uint256 shares) {
         return _deposit(msg.sender, assets);
     }
 
     /// @inheritdoc IGoalyVault
-    /// @dev The caller funds the deposit but the position is credited to `user`. Used by the
-    ///      LayerZero composer to attribute cross-chain deposits to the origin-chain user.
     function depositFor(address user, uint256 assets)
         external
         nonReentrant
@@ -117,10 +144,12 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     function _deposit(address user, uint256 assets) internal returns (uint256 shares) {
         if (assets == 0) revert ZeroAmount();
+        uint256 poolBefore = totalAssets();
         asset.safeTransferFrom(msg.sender, address(this), assets);
         asset.forceApprove(address(yieldVault), assets);
-        shares = yieldVault.deposit(assets, address(this));
+        yieldVault.deposit(assets, address(this));
 
+        shares = (totalShares == 0 || poolBefore == 0) ? assets : (assets * totalShares) / poolBefore;
         Account storage account = _accounts[user];
         account.principal += assets;
         account.shares += shares;
@@ -131,7 +160,6 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     // ── Credit (settler only) ──
 
-    /// @inheritdoc IGoalyVault
     function chargeDebt(address user, uint256 amount) external onlyRole(SETTLER_ROLE) {
         if (amount == 0) revert ZeroAmount();
         Account storage account = _accounts[user];
@@ -141,7 +169,8 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     // ── Withdraw ──
 
-    /// @inheritdoc IGoalyVault
+    /// @notice Withdraw principal — only once yield has cleared the debt. Accrued yield stays with
+    ///         the protocol (it funds the game); principal is never touched.
     function withdraw() external nonReentrant returns (uint256 assets) {
         Account storage account = _accounts[msg.sender];
         uint256 principal = account.principal;
@@ -149,18 +178,21 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
         if (principalLocked(msg.sender)) revert PrincipalLocked();
 
         uint256 userShares = account.shares;
-        uint256 sharesBurned = yieldVault.withdraw(principal, msg.sender, address(this));
-        uint256 residual = userShares > sharesBurned ? userShares - sharesBurned : 0;
+        uint256 pool = totalAssets();
+        uint256 principalShares = pool == 0 ? userShares : (principal * totalShares) / pool;
+        if (principalShares > userShares) principalShares = userShares;
+        uint256 yieldShares = userShares - principalShares;
 
         account.principal = 0;
         account.shares = 0;
         account.debt = 0;
-        protocolShares += residual;
         totalPrincipal -= principal;
-        totalShares -= sharesBurned;
+        totalShares -= principalShares;
+        protocolShares += yieldShares;
 
+        yieldVault.withdraw(principal, msg.sender, address(this));
         assets = principal;
-        emit Withdrawn(msg.sender, assets, sharesBurned);
+        emit Withdrawn(msg.sender, assets, principalShares);
     }
 
     /// @inheritdoc IGoalyVault
@@ -168,9 +200,10 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
         if (to == address(0)) revert ZeroAddress();
         uint256 shares = protocolShares;
         if (shares == 0) revert ZeroAmount();
+        assets = (totalAssets() * shares) / totalShares;
         protocolShares = 0;
         totalShares -= shares;
-        assets = yieldVault.redeem(shares, to, address(this));
+        yieldVault.withdraw(assets, to, address(this));
         emit YieldCollected(to, assets, shares);
     }
 }

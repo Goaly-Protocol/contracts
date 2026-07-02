@@ -125,4 +125,27 @@ contract GoalyVaultTest is Test {
         vm.expectRevert(IGoalyVault.AssetMismatch.selector);
         new GoalyVault(IERC20(address(other)), IERC4626(address(morpho)));
     }
+
+    function test_MigrateYieldVaultPreservesValue() public {
+        _depositAsAlice(100 * UNIT);
+        morpho.accrue(10 * UNIT); // pool now ~110
+        assertApproxEqAbs(vault.totalAssets(), 110 * UNIT, 2);
+
+        // Migrate the entire position to a fresh Morpho vault (e.g. old one deprecated).
+        MockERC4626 morphoB = new MockERC4626(usdt0);
+        vault.migrateYieldVault(IERC4626(address(morphoB)));
+
+        assertEq(address(vault.yieldVault()), address(morphoB));
+        // Value and the user's claim are preserved across the migration.
+        assertApproxEqAbs(vault.totalAssets(), 110 * UNIT, 3);
+        assertApproxEqAbs(vault.yieldOf(alice), 10 * UNIT, 3);
+        assertEq(vault.principalOf(alice), 100 * UNIT);
+    }
+
+    function test_MigrateRejectsAssetMismatch() public {
+        MockERC20 other = new MockERC20("OTHER", "OTHER", 6);
+        MockERC4626 badVault = new MockERC4626(other);
+        vm.expectRevert(IGoalyVault.AssetMismatch.selector);
+        vault.migrateYieldVault(IERC4626(address(badVault)));
+    }
 }

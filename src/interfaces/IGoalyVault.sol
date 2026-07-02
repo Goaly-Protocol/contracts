@@ -39,7 +39,9 @@ interface IGoalyVault {
     function chargeDebt(address user, uint256 amount) external;
     function collectYield(address to) external returns (uint256 assets);
     function setSettler(address settler, bool enabled) external;
+    function migrateYieldVault(IERC4626 newYieldVault) external;
 
+    function totalAssets() external view returns (uint256);
     function accountOf(address user) external view returns (Account memory);
     function yieldOf(address user) external view returns (uint256);
     function remainingDebt(address user) external view returns (uint256);

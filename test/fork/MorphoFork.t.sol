@@ -46,7 +46,7 @@ contract MorphoForkTest is Test {
 
         assertGt(shares, 0, "no shares minted");
         assertEq(vault.principalOf(user), amount);
-        // Freshly minted shares should be worth ~the deposited principal (minus rounding).
-        assertApproxEqAbs(morpho.convertToAssets(vault.sharesOf(user)), amount, 5);
+        // The vault's Morpho position should be worth ~the deposited principal (minus rounding).
+        assertApproxEqAbs(vault.totalAssets(), amount, 5);
     }
 }
