@@ -52,7 +52,19 @@ ARBITRUM_RPC_URL=... bun run --filter @goaly/contracts test:integration   # Morp
 - **Fork** — `test/fork/MorphoFork.t.sol` deposits real USDT0 into the real Morpho Gauntlet USDT0 Core
   vault on Arbitrum. No-ops unless `ARBITRUM_RPC_URL` is set.
 
+## Deploy
+
+`Deploy.s.sol` deploys and wires the whole system (GoalyVault + PredictionPool + GoalyVaultComposer,
+granting the pool `SETTLER_ROLE`):
+
+```bash
+WALLET_PK=0x... forge script script/Deploy.s.sol:Deploy --rpc-url arbitrum --broadcast
+```
+
+Uses the Morpho Gauntlet USDT0 Core vault and the canonical LayerZero V2 Endpoint by default;
+override `LZ_ENDPOINT` / `USDT0_OFT` via env if needed.
+
 ## Roadmap
 
-- Wire `layerzero.config` + deploy the composer with the live USDT0 OFT / Endpoint addresses.
+- Add a `layerzero.config` to enforce OFT peers/DVNs for the cross-chain path.
 - Optional: full LayerZero **OVault** (omnichain vault shares) so positions themselves are cross-chain.
