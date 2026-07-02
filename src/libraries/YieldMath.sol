@@ -11,7 +11,7 @@ library YieldMath {
     }
 
     /// @notice Debt still outstanding after accrued yield is applied, floored at zero.
-    function outstanding(uint256 debt, uint256 accrued) internal pure returns (uint256) {
+    function outstandingDebt(uint256 debt, uint256 accrued) internal pure returns (uint256) {
         return debt > accrued ? debt - accrued : 0;
     }
 }

@@ -93,8 +93,8 @@ contract GoalyVaultTest is Test {
         assertEq(vault.debtOf(alice), 0);
 
         assertGt(vault.protocolShares(), 0);
-        uint256 skimmed = vault.skim(address(this));
-        assertApproxEqAbs(skimmed, 5 * UNIT, 2);
+        uint256 collected = vault.collectYield(address(this));
+        assertApproxEqAbs(collected, 5 * UNIT, 2);
     }
 
     function test_WithdrawWithoutDebtReturnsPrincipal() public {

@@ -12,13 +12,13 @@ contract YieldMathTest is Test {
     }
 
     function test_Outstanding() public pure {
-        assertEq(YieldMath.outstanding(5, 2), 3);
-        assertEq(YieldMath.outstanding(5, 5), 0);
-        assertEq(YieldMath.outstanding(5, 9), 0); // never negative
+        assertEq(YieldMath.outstandingDebt(5, 2), 3);
+        assertEq(YieldMath.outstandingDebt(5, 5), 0);
+        assertEq(YieldMath.outstandingDebt(5, 9), 0); // never negative
     }
 
     function testFuzz_OutstandingNeverExceedsDebt(uint256 debt, uint256 accrued) public pure {
-        assertLe(YieldMath.outstanding(debt, accrued), debt);
+        assertLe(YieldMath.outstandingDebt(debt, accrued), debt);
     }
 
     function testFuzz_AccruedYieldMonotonic(uint128 principal, uint128 extra) public pure {

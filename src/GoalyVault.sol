@@ -66,7 +66,7 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     /// @inheritdoc IGoalyVault
     function remainingDebt(address user) public view returns (uint256) {
-        return YieldMath.outstanding(_accounts[user].debt, yieldOf(user));
+        return YieldMath.outstandingDebt(_accounts[user].debt, yieldOf(user));
     }
 
     /// @inheritdoc IGoalyVault
@@ -164,13 +164,13 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
     }
 
     /// @inheritdoc IGoalyVault
-    function skim(address to) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant returns (uint256 assets) {
+    function collectYield(address to) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant returns (uint256 assets) {
         if (to == address(0)) revert ZeroAddress();
         uint256 shares = protocolShares;
         if (shares == 0) revert ZeroAmount();
         protocolShares = 0;
         totalShares -= shares;
         assets = yieldVault.redeem(shares, to, address(this));
-        emit Skimmed(to, assets, shares);
+        emit YieldCollected(to, assets, shares);
     }
 }

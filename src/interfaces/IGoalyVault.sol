@@ -22,7 +22,7 @@ interface IGoalyVault {
     event Withdrawn(address indexed user, uint256 assets, uint256 sharesBurned);
     event DebtCharged(address indexed user, uint256 amount, uint256 totalDebt);
     event SettlerSet(address indexed settler, bool enabled);
-    event Skimmed(address indexed to, uint256 assets, uint256 shares);
+    event YieldCollected(address indexed to, uint256 assets, uint256 shares);
 
     error ZeroAmount();
     error ZeroAddress();
@@ -37,7 +37,7 @@ interface IGoalyVault {
     function depositFor(address user, uint256 assets) external returns (uint256 shares);
     function withdraw() external returns (uint256 assets);
     function chargeDebt(address user, uint256 amount) external;
-    function skim(address to) external returns (uint256 assets);
+    function collectYield(address to) external returns (uint256 assets);
     function setSettler(address settler, bool enabled) external;
 
     function accountOf(address user) external view returns (Account memory);
