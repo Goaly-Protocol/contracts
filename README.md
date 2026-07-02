@@ -1,35 +1,58 @@
 # @goaly/contracts
 
-Foundry contracts for Goaly. The centerpiece is **`GoalyVault`** — the on-chain yield +
-self-repay engine.
+Foundry contracts for Goaly.
+
+| Contract             | Role                                                                         |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `GoalyVault`         | Self-custodial deposit vault; supplies USDT0 to Morpho for yield, self-repay |
+| `PredictionPool`     | No-loss, yield-funded prediction markets (borrows credit via the vault)      |
+| `GoalyVaultComposer` | LayerZero composer — turns a cross-chain USDT0 transfer into a vault deposit |
+| `YieldMath`          | Pure self-repay math library (mirrors `@goaly/core`)                         |
 
 ## GoalyVault
 
-- `deposit(assets)` — supplies USDT0 into a Morpho MetaMorpho (ERC-4626) vault to earn yield.
-- `chargeDebt(user, amount)` — a settler (the prediction pool) records borrowed prediction credit.
-- `remainingDebt` / `principalLocked` — debt is repaid **only** by the yield the user's own
-  principal earns; principal is never touched.
-- `withdraw()` — returns the user's principal once yield has cleared the debt. Accrued yield stays
-  with the protocol (`skim`), which is what funds the game. **A player can never withdraw less than
-  their principal.**
+- `deposit(assets)` / `depositFor(user, assets)` — supplies USDT0 into a Morpho MetaMorpho
+  (ERC-4626) vault to earn yield. `depositFor` credits another address (used by the LayerZero
+  composer for cross-chain deposits).
+- `chargeDebt(user, amount)` — a `SETTLER_ROLE` holder (the prediction pool) records borrowed credit.
+- `remainingDebt` / `principalLocked` — debt is repaid **only** by the yield the user's own principal
+  earns; principal is never touched. **A player can never withdraw less than their principal.**
+- OpenZeppelin `AccessControl` + `ReentrancyGuard` + `Pausable` + `SafeERC20`.
+
+## Cross-chain deposits (LayerZero V2)
+
+`GoalyVaultComposer` implements LayerZero's `ILayerZeroComposer`. A user on any chain sends USDT0 via
+its **OFT** to Arbitrum, targeting the composer with a compose message carrying their hub address:
+
+```
+USDT0 (any chain) --OFT.send--> Arbitrum: USDT0 OFT delivers tokens to composer
+                                         + Endpoint calls composer.lzCompose(...)
+composer decodes amountLD + recipient (OFTComposeMsgCodec) --> vault.depositFor(recipient, amount)
+```
+
+Uses the official packages `@layerzerolabs/lz-evm-protocol-v2` (interface) and `@layerzerolabs/oft-evm`
+(compose codec). `lzCompose` is guarded to the LayerZero Endpoint and the expected USDT0 OFT. Endpoint
+and OFT addresses per chain come from LayerZero's Endpoint Metadata; wire peers with a `layerzero.config`.
 
 ## Setup
 
 ```bash
-forge install                 # fetches forge-std (git submodule under lib/)
+bun install                   # LayerZero packages (node_modules) used via foundry remappings
+forge install                 # forge-std + openzeppelin-contracts (git submodules)
 bun run --filter @goaly/contracts build
-bun run --filter @goaly/contracts test              # unit tests (mocks)
-ARBITRUM_RPC_URL=... bun run --filter @goaly/contracts test:integration   # fork test
+bun run --filter @goaly/contracts test              # unit tests (mocks) — 21 tests
+ARBITRUM_RPC_URL=... bun run --filter @goaly/contracts test:integration   # Morpho fork test
 ```
 
 ## Testing
 
-- **Unit** (`test/GoalyVault.t.sol`) — full deposit → charge debt → yield → self-repay →
-  withdraw flow against `MockERC20` + `MockERC4626` (yield simulated via `accrue`).
-- **Fork** (`test/fork/MorphoFork.t.sol`) — deposits real USDT0 into the real Morpho Gauntlet USDT0
-  Core vault on Arbitrum. No-ops unless `ARBITRUM_RPC_URL` is set.
+- **Unit** — `GoalyVault.t.sol`, `PredictionPool.t.sol`, `GoalyVaultComposer.t.sol`, `YieldMath.t.sol`
+  against `MockERC20` + `MockERC4626` (yield simulated via `accrue`, cross-chain compose simulated
+  with an encoded OFT message + mocked endpoint).
+- **Fork** — `test/fork/MorphoFork.t.sol` deposits real USDT0 into the real Morpho Gauntlet USDT0 Core
+  vault on Arbitrum. No-ops unless `ARBITRUM_RPC_URL` is set.
 
 ## Roadmap
 
-- `PredictionPool` (markets, pot escrow) currently lives off-chain in `apps/api`; moving it on-chain
-  is the next step. Cross-chain deposits will use LayerZero **OVault** (OFT + ERC-4626).
+- Wire `layerzero.config` + deploy the composer with the live USDT0 OFT / Endpoint addresses.
+- Optional: full LayerZero **OVault** (omnichain vault shares) so positions themselves are cross-chain.
