@@ -20,6 +20,11 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     IERC20 public immutable stakeToken; // goUSDT
     IERC20 public immutable prizeToken; // USDT0
     uint16 public immutable feeBps;
+    /// @notice Odds boost factor in bps (e.g. 5_000 = 0.5×). Bigger odds → bigger boost.
+    uint16 public immutable boostBps;
+
+    /// @notice USDT0 reserve (harvested protocol yield) that funds odds boosts.
+    uint256 public reserve;
 
     enum Outcome {
         HOME,
@@ -52,6 +57,8 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     event PredictionPlaced(bytes32 indexed marketId, address indexed user, Outcome outcome, uint256 amount);
     event MarketSettled(bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 totalStake);
     event PrizeFunded(bytes32 indexed marketId, uint256 amount);
+    event ReserveFunded(address indexed from, uint256 amount, uint256 reserve);
+    event OddsBoostApplied(bytes32 indexed marketId, uint256 winningOddsBps, uint256 boost);
     event Claimed(bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize);
 
     error MarketExists();
@@ -63,11 +70,12 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     error AlreadyClaimed();
     error NothingStaked();
 
-    constructor(IERC20 _stakeToken, IERC20 _prizeToken, uint16 _feeBps) {
+    constructor(IERC20 _stakeToken, IERC20 _prizeToken, uint16 _feeBps, uint16 _boostBps) {
         require(_feeBps <= BPS, "fee too high");
         stakeToken = _stakeToken;
         prizeToken = _prizeToken;
         feeBps = _feeBps;
+        boostBps = _boostBps;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ORACLE_ROLE, msg.sender);
     }
@@ -81,16 +89,38 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
         emit MarketCreated(marketId, closeTime);
     }
 
-    function settleMarket(bytes32 marketId, Outcome result) external onlyRole(ORACLE_ROLE) {
+    /// @notice Settle a market with its result and the winning outcome's decimal odds (×10_000,
+    ///         e.g. 8.00 → 80_000). An odds boost (larger for underdogs) is drawn from the reserve
+    ///         and folded into the prize, so the existing pro-rata claim distributes it to winners.
+    function settleMarket(bytes32 marketId, Outcome result, uint256 winningOddsBps)
+        external
+        onlyRole(ORACLE_ROLE)
+    {
         Market storage market = markets[marketId];
         if (market.status != Status.OPEN) revert MarketNotOpen();
         market.status = Status.SETTLED;
         market.result = result;
-        market.winningStake = outcomeStake[marketId][uint8(result)];
-        emit MarketSettled(marketId, result, market.winningStake, market.totalStake);
+        uint256 winningStake = outcomeStake[marketId][uint8(result)];
+        market.winningStake = winningStake;
+
+        uint256 boost = _oddsBoost(winningStake, winningOddsBps);
+        if (boost > 0) {
+            reserve -= boost;
+            market.prize += boost;
+            emit OddsBoostApplied(marketId, winningOddsBps, boost);
+        }
+        emit MarketSettled(marketId, result, winningStake, market.totalStake);
     }
 
-    /// @notice Fund a market's prize with USDT0 (e.g. harvested vault yield).
+    /// @dev Odds boost = winningStake × (odds − 1) × boostBps, capped by the reserve so payouts can
+    ///      never exceed the yield that exists. Mirrors the core oddsBoostedPrize helper.
+    function _oddsBoost(uint256 winningStake, uint256 winningOddsBps) internal view returns (uint256) {
+        if (winningStake == 0 || winningOddsBps <= BPS || boostBps == 0) return 0;
+        uint256 uncapped = (winningStake * (winningOddsBps - BPS) * boostBps) / (BPS * BPS);
+        return uncapped > reserve ? reserve : uncapped;
+    }
+
+    /// @notice Fund a market's base prize with USDT0 (e.g. harvested vault yield).
     function fundPrize(bytes32 marketId, uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
         Market storage market = markets[marketId];
@@ -98,6 +128,14 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
         prizeToken.safeTransferFrom(msg.sender, address(this), amount);
         market.prize += amount;
         emit PrizeFunded(marketId, amount);
+    }
+
+    /// @notice Top up the odds-boost reserve with USDT0 (harvested protocol yield).
+    function fundReserve(uint256 amount) external {
+        if (amount == 0) revert ZeroAmount();
+        prizeToken.safeTransferFrom(msg.sender, address(this), amount);
+        reserve += amount;
+        emit ReserveFunded(msg.sender, amount, reserve);
     }
 
     // ── Players ──

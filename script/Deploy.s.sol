@@ -21,6 +21,7 @@ contract Deploy is Script {
         if (pk == 0) pk = vm.envUint("PRIVATE_KEY");
 
         uint16 feeBps = uint16(vm.envOr("PROTOCOL_FEE_BPS", uint256(250)));
+        uint16 boostBps = uint16(vm.envOr("PROTOCOL_BOOST_BPS", uint256(5000)));
         address lzEndpoint = vm.envOr("LZ_ENDPOINT", LZ_ENDPOINT_DEFAULT);
 
         IERC4626 morpho = IERC4626(MORPHO_VAULT);
@@ -30,7 +31,7 @@ contract Deploy is Script {
         vm.startBroadcast(pk);
         vault = new GoalyVault(IERC20(usdt0), morpho);
         // goUSDT (the vault itself) is the stake token; USDT0 is the prize token.
-        pool = new PredictionPool(IERC20(address(vault)), IERC20(usdt0), feeBps);
+        pool = new PredictionPool(IERC20(address(vault)), IERC20(usdt0), feeBps, boostBps);
         composer = new GoalyVaultComposer(
             IERC20(usdt0), IGoalyVaultDeposit(address(vault)), lzEndpoint, oft
         );

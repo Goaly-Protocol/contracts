@@ -24,7 +24,8 @@ contract PredictionPoolTest is Test {
         usdt0 = new MockERC20("USDT0", "USDT0", 6);
         morpho = new MockERC4626(usdt0);
         vault = new GoalyVault(IERC20(address(usdt0)), IERC4626(address(morpho)));
-        pool = new PredictionPool(IERC20(address(vault)), IERC20(address(usdt0)), 250); // 2.5% fee
+        // 2.5% fee, 0.5× odds boost
+        pool = new PredictionPool(IERC20(address(vault)), IERC20(address(usdt0)), 250, 5000);
 
         _fund(alice, 100 * UNIT);
         _fund(bob, 100 * UNIT);
@@ -52,6 +53,12 @@ contract PredictionPoolTest is Test {
         pool.fundPrize(MARKET, amount);
     }
 
+    function _fundReserve(uint256 amount) internal {
+        usdt0.mint(address(this), amount);
+        usdt0.approve(address(pool), amount);
+        pool.fundReserve(amount);
+    }
+
     function test_PlaceLocksGoUsdt() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
         assertEq(vault.balanceOf(alice), 90 * UNIT); // 10 goUSDT locked
@@ -62,7 +69,7 @@ contract PredictionPoolTest is Test {
     function test_NoLoss_WinnerGetsPrizeLoserGetsStakeBack() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
         _place(bob, PredictionPool.Outcome.AWAY, 10 * UNIT);
-        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 20_000);
         _fundPrize(5 * UNIT);
 
         // Winner: stake returned + prize (minus 2.5% fee)
@@ -97,17 +104,60 @@ contract PredictionPoolTest is Test {
     function test_SettleRequiresOracleRole() public {
         vm.expectRevert();
         vm.prank(alice);
-        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 20_000);
     }
 
     function test_DoubleClaimReverts() public {
         _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
-        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME);
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 20_000);
         _fundPrize(5 * UNIT);
         vm.prank(alice);
         pool.claim(MARKET);
         vm.expectRevert(PredictionPool.AlreadyClaimed.selector);
         vm.prank(alice);
         pool.claim(MARKET);
+    }
+
+    // ── Odds boost ──
+
+    function test_FundReserve() public {
+        _fundReserve(50 * UNIT);
+        assertEq(pool.reserve(), 50 * UNIT);
+        assertEq(usdt0.balanceOf(address(pool)), 50 * UNIT);
+    }
+
+    function test_OddsBoostFoldedIntoPrizeFromReserve() public {
+        // Only alice bets the winning outcome (10 goUSDT). Base prize 5, reserve 100.
+        _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
+        _fundPrize(5 * UNIT);
+        _fundReserve(100 * UNIT);
+
+        // Settle at 3.00 odds → boost = 10 × (3−1) × 0.5 = 10; prize = 5 + 10 = 15, reserve = 90.
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 30_000);
+        assertEq(pool.reserve(), 90 * UNIT);
+        (,,,,, uint256 prize) = pool.markets(MARKET);
+        assertEq(prize, 15 * UNIT);
+
+        // Sole winner claims 15 minus the 2.5% fee.
+        vm.prank(alice);
+        (, uint256 aPrize) = pool.claim(MARKET);
+        assertEq(aPrize, 15 * UNIT - (15 * UNIT * 250) / 10_000);
+    }
+
+    function test_BoostCappedByReserve() public {
+        _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
+        _fundReserve(3 * UNIT); // uncapped boost would be 10
+
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 30_000);
+        assertEq(pool.reserve(), 0);
+        (,,,,, uint256 prize) = pool.markets(MARKET);
+        assertEq(prize, 3 * UNIT); // capped boost only (no base prize funded)
+    }
+
+    function test_NoBoostForEvenOdds() public {
+        _place(alice, PredictionPool.Outcome.HOME, 10 * UNIT);
+        _fundReserve(100 * UNIT);
+        pool.settleMarket(MARKET, PredictionPool.Outcome.HOME, 10_000); // 1.00 odds
+        assertEq(pool.reserve(), 100 * UNIT); // untouched
     }
 }

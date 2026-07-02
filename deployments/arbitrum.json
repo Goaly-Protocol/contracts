@@ -1,16 +1,16 @@
 {
   "chainId": 42161,
   "network": "arbitrum-one",
-  "deployBlock": 479616669,
+  "deployBlock": 479692780,
   "contracts": {
-    "GoalyVault": "0xD3Ec43F60E2AC1517c4DD80C0A23Ad8d902EAF0F",
-    "PredictionPool": "0xfECc20bdaa28681Bada577731B8A24F415cBCa87",
-    "GoalyVaultComposer": "0xF83c270f5CA29eCa91454Cfd1F9653f619F5d579"
+    "GoalyVault": "0xC5C51C530174857B7eCa715cFa275a0FBeaE0eb1",
+    "PredictionPool": "0x28D56B2512e2e77AF1d49e5E2290ea2EB4918A99",
+    "GoalyVaultComposer": "0xDb839c7100531b331D54C0C2cA81C971ae4eF31A"
   },
   "external": {
     "USDT0": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
     "morphoVault": "0x139250CdB310D657eAC506c7C7FC6AcDE34Af1ec",
     "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
   },
-  "notes": "GoalyVault is goUSDT (ERC-20 receipt, 1:1 with USDT0, migratable Morpho backing). PredictionPool stakes goUSDT; prizes paid in USDT0 from harvested yield."
+  "notes": "GoalyVault = goUSDT (ERC-20 receipt, 1:1 USDT0, migratable Morpho backing). PredictionPool stakes goUSDT; prizes in USDT0 from harvested yield, with an odds-boosted parimutuel (reserve-capped boost per settle)."
 }
