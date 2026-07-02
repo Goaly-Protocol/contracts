@@ -34,6 +34,7 @@ interface IGoalyVault {
     function yieldVault() external view returns (IERC4626);
 
     function deposit(uint256 assets) external returns (uint256 shares);
+    function depositFor(address user, uint256 assets) external returns (uint256 shares);
     function withdraw() external returns (uint256 assets);
     function chargeDebt(address user, uint256 amount) external;
     function skim(address to) external returns (uint256 assets);

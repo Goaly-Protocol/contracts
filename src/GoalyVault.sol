@@ -99,17 +99,34 @@ contract GoalyVault is IGoalyVault, AccessControl, ReentrancyGuard, Pausable {
 
     /// @inheritdoc IGoalyVault
     function deposit(uint256 assets) external nonReentrant whenNotPaused returns (uint256 shares) {
+        return _deposit(msg.sender, assets);
+    }
+
+    /// @inheritdoc IGoalyVault
+    /// @dev The caller funds the deposit but the position is credited to `user`. Used by the
+    ///      LayerZero composer to attribute cross-chain deposits to the origin-chain user.
+    function depositFor(address user, uint256 assets)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 shares)
+    {
+        if (user == address(0)) revert ZeroAddress();
+        return _deposit(user, assets);
+    }
+
+    function _deposit(address user, uint256 assets) internal returns (uint256 shares) {
         if (assets == 0) revert ZeroAmount();
         asset.safeTransferFrom(msg.sender, address(this), assets);
         asset.forceApprove(address(yieldVault), assets);
         shares = yieldVault.deposit(assets, address(this));
 
-        Account storage account = _accounts[msg.sender];
+        Account storage account = _accounts[user];
         account.principal += assets;
         account.shares += shares;
         totalPrincipal += assets;
         totalShares += shares;
-        emit Deposited(msg.sender, assets, shares);
+        emit Deposited(user, assets, shares);
     }
 
     // ── Credit (settler only) ──
