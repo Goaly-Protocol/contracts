@@ -9,5 +9,9 @@
     "test:integration": "forge test --match-path 'test/fork/**'",
     "fmt": "forge fmt",
     "deploy:arbitrum": "forge script script/Deploy.s.sol:Deploy --rpc-url arbitrum --broadcast -vvvv"
+  },
+  "dependencies": {
+    "@layerzerolabs/lz-evm-protocol-v2": "^3.0.168",
+    "@layerzerolabs/oft-evm": "^4.0.1"
   }
 }
