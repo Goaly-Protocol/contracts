@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyVault} from "../src/GoalyVault.sol";
+import {ISwapRouter} from "../src/interfaces/ISwapRouter.sol";
 import {PredictionPool} from "../src/PredictionPool.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockERC4626} from "./mocks/MockERC4626.sol";
@@ -23,7 +24,9 @@ contract PredictionPoolTest is Test {
     function setUp() public {
         usdt0 = new MockERC20("USDT0", "USDT0", 6);
         morpho = new MockERC4626(usdt0);
-        vault = new GoalyVault(IERC20(address(usdt0)), IERC4626(address(morpho)));
+        vault = new GoalyVault(
+            IERC20(address(usdt0)), IERC4626(address(morpho)), ISwapRouter(address(0)), 100, 50
+        );
         // 2.5% fee, 0.5× odds boost
         pool = new PredictionPool(IERC20(address(vault)), IERC20(address(usdt0)), 250, 5000);
 
