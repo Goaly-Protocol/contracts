@@ -26,7 +26,10 @@ contract MockERC4626 {
         balanceOf[receiver] += shares;
     }
 
-    function withdraw(uint256 assets, address receiver, address owner) external returns (uint256 shares) {
+    function withdraw(uint256 assets, address receiver, address owner)
+        external
+        returns (uint256 shares)
+    {
         shares = (assets * totalShares + totalManaged - 1) / totalManaged; // ceil
         balanceOf[owner] -= shares;
         totalShares -= shares;
@@ -34,7 +37,10 @@ contract MockERC4626 {
         underlying.transfer(receiver, assets);
     }
 
-    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets) {
+    function redeem(uint256 shares, address receiver, address owner)
+        external
+        returns (uint256 assets)
+    {
         assets = (shares * totalManaged) / totalShares;
         balanceOf[owner] -= shares;
         totalShares -= shares;

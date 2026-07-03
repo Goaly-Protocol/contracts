@@ -54,12 +54,18 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     mapping(bytes32 marketId => mapping(address user => bool)) public claimed;
 
     event MarketCreated(bytes32 indexed marketId, uint64 closeTime);
-    event PredictionPlaced(bytes32 indexed marketId, address indexed user, Outcome outcome, uint256 amount);
-    event MarketSettled(bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 totalStake);
+    event PredictionPlaced(
+        bytes32 indexed marketId, address indexed user, Outcome outcome, uint256 amount
+    );
+    event MarketSettled(
+        bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 totalStake
+    );
     event PrizeFunded(bytes32 indexed marketId, uint256 amount);
     event ReserveFunded(address indexed from, uint256 amount, uint256 reserve);
     event OddsBoostApplied(bytes32 indexed marketId, uint256 winningOddsBps, uint256 boost);
-    event Claimed(bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize);
+    event Claimed(
+        bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize
+    );
 
     error MarketExists();
     error MarketNotOpen();
@@ -84,8 +90,14 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
 
     function createMarket(bytes32 marketId, uint64 closeTime) external onlyRole(ORACLE_ROLE) {
         if (markets[marketId].status != Status.NONE) revert MarketExists();
-        markets[marketId] =
-            Market({closeTime: closeTime, status: Status.OPEN, result: Outcome.HOME, totalStake: 0, winningStake: 0, prize: 0});
+        markets[marketId] = Market({
+            closeTime: closeTime,
+            status: Status.OPEN,
+            result: Outcome.HOME,
+            totalStake: 0,
+            winningStake: 0,
+            prize: 0
+        });
         emit MarketCreated(marketId, closeTime);
     }
 
@@ -114,7 +126,11 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
 
     /// @dev Odds boost = winningStake × (odds − 1) × boostBps, capped by the reserve so payouts can
     ///      never exceed the yield that exists. Mirrors the core oddsBoostedPrize helper.
-    function _oddsBoost(uint256 winningStake, uint256 winningOddsBps) internal view returns (uint256) {
+    function _oddsBoost(uint256 winningStake, uint256 winningOddsBps)
+        internal
+        view
+        returns (uint256)
+    {
         if (winningStake == 0 || winningOddsBps <= BPS || boostBps == 0) return 0;
         uint256 uncapped = (winningStake * (winningOddsBps - BPS) * boostBps) / (BPS * BPS);
         return uncapped > reserve ? reserve : uncapped;
@@ -141,7 +157,10 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     // ── Players ──
 
     /// @notice Stake `amount` goUSDT on `outcome`. The stake is locked and returned in full at claim.
-    function placePrediction(bytes32 marketId, Outcome outcome, uint256 amount) external nonReentrant {
+    function placePrediction(bytes32 marketId, Outcome outcome, uint256 amount)
+        external
+        nonReentrant
+    {
         Market storage market = markets[marketId];
         if (market.status != Status.OPEN) revert MarketNotOpen();
         if (block.timestamp >= market.closeTime) revert MarketClosed();
@@ -168,7 +187,11 @@ contract PredictionPool is AccessControl, ReentrancyGuard {
     }
 
     /// @notice Reclaim your staked goUSDT (always, no-loss) plus your USDT0 prize (if you won).
-    function claim(bytes32 marketId) external nonReentrant returns (uint256 stakeReturned, uint256 prize) {
+    function claim(bytes32 marketId)
+        external
+        nonReentrant
+        returns (uint256 stakeReturned, uint256 prize)
+    {
         Market storage market = markets[marketId];
         if (market.status != Status.SETTLED) revert NotSettled();
         if (claimed[marketId][msg.sender]) revert AlreadyClaimed();
