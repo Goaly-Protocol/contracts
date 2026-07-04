@@ -9,6 +9,7 @@ optimizer_runs = 200
 remappings = [
     "forge-std/=lib/forge-std/src/",
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "@openzeppelin/contracts-upgradeable/=../../node_modules/@openzeppelin/contracts-upgradeable/contracts/",
     "@wormhole-foundation/wormhole-solidity-sdk/=../../node_modules/@wormhole-foundation/wormhole-solidity-sdk/contracts/",
 ]
 allow_paths = ["../../node_modules"]
