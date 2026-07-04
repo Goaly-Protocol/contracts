@@ -8,6 +8,9 @@ import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyVault} from "../src/GoalyVault.sol";
 import {GoalyMarkets} from "../src/GoalyMarkets.sol";
 import {MorphoStrategy} from "../src/strategies/MorphoStrategy.sol";
+import {GoalySettlement} from "../src/GoalySettlement.sol";
+import {ReserveManager} from "../src/ReserveManager.sol";
+import {IOFT} from "../src/interfaces/IOFT.sol";
 
 /// @notice Deploys the layered Goaly protocol behind UUPS proxies, wires the least-privilege roles,
 ///         then hands DEFAULT_ADMIN to governance (Timelock + Safe) and renounces the deployer's.
@@ -62,7 +65,26 @@ contract DeployProtocol is Script {
         );
         markets.grantRole(markets.GUARDIAN_ROLE(), guardian);
 
-        // 4) Hand DEFAULT_ADMIN to governance (Timelock + Safe) and drop the deployer's.
+        // 4) Optimistic settlement oracle (holds ORACLE_ROLE; backend gets PROPOSER_ROLE).
+        GoalySettlement settlement = new GoalySettlement(
+            markets,
+            IERC20(usdt0),
+            vm.envOr("BOND_AMOUNT", uint256(10e6)),
+            uint64(vm.envOr("DISPUTE_WINDOW", uint256(2 hours))),
+            deployer // temporary admin so the deployer can wire the sub-roles
+        );
+        markets.grantRole(markets.ORACLE_ROLE(), address(settlement));
+        settlement.grantRole(settlement.PROPOSER_ROLE(), oracle);
+        settlement.grantRole(settlement.DEFAULT_ADMIN_ROLE(), governance);
+        settlement.renounceRole(settlement.DEFAULT_ADMIN_ROLE(), deployer);
+
+        // 5) Reserve manager (surplus-only cross-chain via the USDT0 OFT; agent is the keeper).
+        ReserveManager reserve = new ReserveManager(IOFT(vm.envAddress("USDT0_OFT")), deployer);
+        reserve.grantRole(reserve.KEEPER_ROLE(), agent);
+        reserve.grantRole(reserve.DEFAULT_ADMIN_ROLE(), governance);
+        reserve.renounceRole(reserve.DEFAULT_ADMIN_ROLE(), deployer);
+
+        // 6) Hand DEFAULT_ADMIN to governance (Timelock + Safe) and drop the deployer's.
         if (governance != deployer) {
             vault.grantRole(vault.DEFAULT_ADMIN_ROLE(), governance);
             markets.grantRole(markets.DEFAULT_ADMIN_ROLE(), governance);
@@ -72,9 +94,11 @@ contract DeployProtocol is Script {
 
         vm.stopBroadcast();
 
-        console2.log("GoalyVault    ", address(vault));
-        console2.log("MorphoStrategy", address(strategy));
-        console2.log("GoalyMarkets  ", address(markets));
-        console2.log("governance    ", governance);
+        console2.log("GoalyVault     ", address(vault));
+        console2.log("MorphoStrategy ", address(strategy));
+        console2.log("GoalyMarkets   ", address(markets));
+        console2.log("GoalySettlement", address(settlement));
+        console2.log("ReserveManager ", address(reserve));
+        console2.log("governance     ", governance);
     }
 }
