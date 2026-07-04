@@ -11,7 +11,7 @@ never at risk** — only the yield it earns funds the prizes. Built with Foundry
 | **GoalyVault** | ERC-4626 vault (UUPS) that pools principal and allocates it across whitelisted strategies, always keeping a liquidity buffer for on-demand claims. |
 | **MorphoStrategy** | Same-asset yield adapter — supplies USDT0 straight into a Morpho USDT0 vault. No cross-asset swap, so no shortfall can ever strand principal. |
 | **GoalySettlement** | Optimistic settlement oracle — results are proposed with a bond, finalise after a dispute window, and escalate to governance if challenged. No single trusted key. |
-| **ReserveManager** | Bridges *surplus only* (prize funds, never principal) cross-chain via the USDT0 LayerZero OFT. |
+| **ReserveManager** | Bridges *surplus only* (prize funds, never principal) cross-chain as USDC via Circle CCTP (Wormhole-relayed). |
 | **AllocationLib** | External library holding the vault's allocation logic (keeps the vault under 24 KB without the optimizer). |
 
 ## How it works

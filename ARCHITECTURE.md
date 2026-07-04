@@ -89,7 +89,7 @@ and renounces the deployer's.
 | `IStrategy` / `MorphoStrategy` | 1 | pluggable same-asset yield adapters |
 | `GoalyVault.rebalance` | 2 | agent sets multi-strategy weights in one tx |
 | `GoalySettlement` | 3 | optimistic settlement oracle (bond + dispute) |
-| `ReserveManager` / `IOFT` | 5 | bridge surplus-only cross-chain via USDT0 OFT |
+| `ReserveManager` / `ICCTP` | 5 | bridge surplus-only cross-chain as USDC via Circle CCTP (Wormhole) |
 
 ## Roadmap
 
@@ -99,7 +99,7 @@ and renounces the deployer's.
 - ⏳ **Phase 4** — WDK chain-abstracted, gasless deposits (app/wallet layer — no contract change; the
   contracts already accept USDT0 from any depositor, WDK routes the multi-chain deposit into it).
 - ✅ **Phase 5** — `ReserveManager`: deploy *surplus only* cross-chain for higher yield (principal
-  stays home; keeper-gated; USDT0 OFT).
+  stays home; keeper-gated; USDC via Circle CCTP, Wormhole-relayed).
 
 18 tests pass (`forge test`) covering the no-loss invariant (unit + fuzz), strategy allocation, the
 optimistic settlement + dispute paths, and the reserve bridge.
