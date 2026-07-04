@@ -1,70 +1,67 @@
-# @goaly/contracts
+# Goaly Protocol — Contracts
 
-Foundry contracts for Goaly.
+No-loss football prediction on Arbitrum. Players stake USDT0 on match outcomes; **the principal is
+never at risk** — only the yield it earns funds the prizes. Built with Foundry.
 
-| Contract             | Role                                                                         |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `GoalyVault`         | Self-custodial deposit vault; supplies USDT0 to Morpho for yield, self-repay |
-| `PredictionPool`     | No-loss, yield-funded prediction markets (borrows credit via the vault)      |
-| `GoalyVaultComposer` | LayerZero composer — turns a cross-chain USDT0 transfer into a vault deposit |
-| `YieldMath`          | Pure self-repay math library (mirrors `@goaly/core`)                         |
+## Contracts
 
-## GoalyVault
+| Contract | Role |
+| --- | --- |
+| **GoalyMarkets** | No-loss prediction layer — `predict` / `claim` / settle. Deposits every stake into the vault; winners split a yield-funded prize. |
+| **GoalyVault** | ERC-4626 vault (UUPS) that pools principal and allocates it across whitelisted strategies, always keeping a liquidity buffer for on-demand claims. |
+| **MorphoStrategy** | Same-asset yield adapter — supplies USDT0 straight into a Morpho USDT0 vault. No cross-asset swap, so no shortfall can ever strand principal. |
+| **GoalySettlement** | Optimistic settlement oracle — results are proposed with a bond, finalise after a dispute window, and escalate to governance if challenged. No single trusted key. |
+| **ReserveManager** | Bridges *surplus only* (prize funds, never principal) cross-chain via the USDT0 LayerZero OFT. |
+| **AllocationLib** | External library holding the vault's allocation logic (keeps the vault under 24 KB without the optimizer). |
 
-- `deposit(assets)` / `depositFor(user, assets)` — supplies USDT0 into a Morpho MetaMorpho
-  (ERC-4626) vault to earn yield. `depositFor` credits another address (used by the LayerZero
-  composer for cross-chain deposits).
-- `chargeDebt(user, amount)` — a `SETTLER_ROLE` holder (the prediction pool) records borrowed credit.
-- `remainingDebt` / `principalLocked` — debt is repaid **only** by the yield the user's own principal
-  earns; principal is never touched. **A player can never withdraw less than their principal.**
-- OpenZeppelin `AccessControl` + `ReentrancyGuard` + `Pausable` + `SafeERC20`.
-
-## Cross-chain deposits (LayerZero V2)
-
-`GoalyVaultComposer` implements LayerZero's `ILayerZeroComposer`. A user on any chain sends USDT0 via
-its **OFT** to Arbitrum, targeting the composer with a compose message carrying their hub address:
+## How it works
 
 ```
-USDT0 (any chain) --OFT.send--> Arbitrum: USDT0 OFT delivers tokens to composer
-                                         + Endpoint calls composer.lzCompose(...)
-composer decodes amountLD + recipient (OFTComposeMsgCodec) --> vault.depositFor(recipient, amount)
+stake USDT0 → GoalyMarkets → GoalyVault → MorphoStrategy (Morpho, earns yield)
+                                   └── 15% buffer kept idle for instant claims
 ```
 
-Uses the official packages `@layerzerolabs/lz-evm-protocol-v2` (interface) and `@layerzerolabs/oft-evm`
-(compose codec). `lzCompose` is guarded to the LayerZero Endpoint and the expected USDT0 OFT. Endpoint
-and OFT addresses per chain come from LayerZero's Endpoint Metadata; wire peers with a `layerzero.config`.
+The no-loss guarantee is an on-chain invariant, `GoalyMarkets.isSolvent()`:
 
-## Setup
+```
+vault.convertToAssets(vault.balanceOf(markets)) ≥ totalStaked + reserve
+```
+
+The vault only ever earns, so principal is always fully redeemable **1:1**. The protocol fee is taken
+from the prize only — never the principal.
+
+## Roles (least privilege)
+
+- **AGENT** — may only `allocate` / `rebalance` between the buffer and whitelisted strategies (never
+  transfer to an EOA). A compromised agent key cannot steal funds.
+- **ORACLE / PROPOSER** — open + settle markets (via GoalySettlement).
+- **GUARDIAN** — `pause` (circuit breaker).
+- **DEFAULT_ADMIN** — governance (Timelock + Safe): whitelist, params, upgrades.
+
+Upgradeable via UUPS with ERC-7201 namespaced storage. See [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+
+## Deployed (Arbitrum One)
+
+Verified on Arbiscan — full list + a live end-to-end proof in [`DEPLOYMENTS.md`](./DEPLOYMENTS.md).
+
+| Contract | Address |
+| --- | --- |
+| GoalyMarkets | `0xFAcaD2Cbc3b6320239389aD5c2F597DeE95f1fd3` |
+| GoalyVault | `0xFe424b5b85C742C15CCB09d62873bE72577CD7Ef` |
+| GoalySettlement | `0xC03BB9526D6F0308d8Ba0831e85f93db3E45e201` |
+
+## Develop
 
 ```bash
-bun install                   # LayerZero packages (node_modules) used via foundry remappings
-forge install                 # forge-std + openzeppelin-contracts (git submodules)
-bun run --filter @goaly/contracts build
-bun run --filter @goaly/contracts test              # unit tests (mocks) — 21 tests
-ARBITRUM_RPC_URL=... bun run --filter @goaly/contracts test:integration   # Morpho fork test
+forge build          # compiles plain — no optimizer, no via-IR
+forge test           # 18 tests: no-loss invariant (unit + fuzz), allocation, settlement, reserve
 ```
-
-## Testing
-
-- **Unit** — `GoalyVault.t.sol`, `PredictionPool.t.sol`, `GoalyVaultComposer.t.sol`, `YieldMath.t.sol`
-  against `MockERC20` + `MockERC4626` (yield simulated via `accrue`, cross-chain compose simulated
-  with an encoded OFT message + mocked endpoint).
-- **Fork** — `test/fork/MorphoFork.t.sol` deposits real USDT0 into the real Morpho Gauntlet USDT0 Core
-  vault on Arbitrum. No-ops unless `ARBITRUM_RPC_URL` is set.
 
 ## Deploy
 
-`Deploy.s.sol` deploys and wires the whole system (GoalyVault + PredictionPool + GoalyVaultComposer,
-granting the pool `SETTLER_ROLE`):
-
 ```bash
-WALLET_PK=0x... forge script script/Deploy.s.sol:Deploy --rpc-url arbitrum --broadcast
+USDT0=0x... MORPHO_USDT0_VAULT=0x... GOVERNANCE=0x... ORACLE=0x... AGENT=0x... GUARDIAN=0x... \
+forge script script/DeployProtocol.s.sol --rpc-url arbitrum --broadcast
 ```
 
-Uses the Morpho Gauntlet USDT0 Core vault and the canonical LayerZero V2 Endpoint by default;
-override `LZ_ENDPOINT` / `USDT0_OFT` via env if needed.
-
-## Roadmap
-
-- Add a `layerzero.config` to enforce OFT peers/DVNs for the cross-chain path.
-- Optional: full LayerZero **OVault** (omnichain vault shares) so positions themselves are cross-chain.
+Deploys both proxies + a strategy behind UUPS, wires the roles, and hands `DEFAULT_ADMIN` to governance.
