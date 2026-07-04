@@ -25,3 +25,16 @@ The layered v2 protocol, deployed behind UUPS proxies and verified on Arbiscan.
 
 Compiled **without the optimizer / via-IR** (plain, auditable bytecode); the vault fits under 24 KB by
 delegating allocation logic to the external `AllocationLib`.
+
+### Live end-to-end proof (on the verified contracts)
+
+Market `0xedb34fad361495b1898c80d31bc6ac90da466349ce2338285f81573ac8443fe9`:
+
+1. `settlement.openMarket` → market opened on GoalyMarkets.
+2. `markets.predict` → 0.004 USDT0 staked; it flowed agent → markets → vault (shares minted).
+3. `vault.allocate` → agent moved 0.0034 into the Steakhouse USDT0 Morpho strategy; 0.0006 (15%)
+   stayed as the liquidity buffer.
+
+Resulting on-chain state: `markets.totalStaked = 4000`, **`markets.isSolvent() = true`**,
+`vault.totalAssets = 4000`, strategy position `= 3400`, idle buffer `= 600`. The no-loss invariant
+holds live: principal fully redeemable while the stake earns yield.
