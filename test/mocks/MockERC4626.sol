@@ -60,6 +60,10 @@ contract MockERC4626 {
         return totalManaged;
     }
 
+    function maxWithdraw(address owner) external view returns (uint256) {
+        return convertToAssets(balanceOf[owner]);
+    }
+
     /// @dev Test helper: mint extra underlying to the vault, raising share value (yield).
     function accrue(uint256 amount) external {
         underlying.mint(address(this), amount);
