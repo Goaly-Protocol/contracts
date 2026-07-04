@@ -63,6 +63,7 @@ contract GoalyVault is
     event StrategyRemoved(address indexed strategy);
     event Allocated(address indexed strategy, uint256 assets);
     event Deallocated(address indexed strategy, uint256 assets);
+    event Rebalanced();
     event BufferSet(uint16 bufferBps);
 
     error NotStrategy();
@@ -71,6 +72,7 @@ contract GoalyVault is
     error BufferBreached();
     error StrategyNotEmpty();
     error InvalidBuffer();
+    error LengthMismatch();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -152,6 +154,40 @@ contract GoalyVault is
         if (!_layout().isStrategy[address(strategy)]) revert NotStrategy();
         strategy.withdraw(assets);
         emit Deallocated(address(strategy), assets);
+    }
+
+    /// @notice Set target asset allocations across strategies in a single tx — the agent's optimised
+    ///         weights. Over-funded strategies are drained first (freeing liquidity), then the
+    ///         under-funded are topped up from whatever idle remains above the buffer. A target that
+    ///         cannot be fully met is simply left partially funded — never at the buffer's expense.
+    function rebalance(IStrategy[] calldata strategies_, uint256[] calldata targets)
+        external
+        onlyRole(AGENT_ROLE)
+        whenNotPaused
+        nonReentrant
+    {
+        Layout storage $ = _layout();
+        uint256 n = strategies_.length;
+        if (n != targets.length) revert LengthMismatch();
+
+        for (uint256 i; i < n; ++i) {
+            if (!$.isStrategy[address(strategies_[i])]) revert NotStrategy();
+            uint256 cur = strategies_[i].totalAssets();
+            if (cur > targets[i]) strategies_[i].withdraw(cur - targets[i]);
+        }
+        uint256 buffer = requiredBuffer();
+        for (uint256 i; i < n; ++i) {
+            uint256 cur = strategies_[i].totalAssets();
+            if (cur >= targets[i]) continue;
+            uint256 idle = IERC20(asset()).balanceOf(address(this));
+            uint256 free = idle > buffer ? idle - buffer : 0;
+            if (free == 0) break;
+            uint256 want = targets[i] - cur;
+            uint256 amount = want < free ? want : free;
+            IERC20(asset()).forceApprove(address(strategies_[i]), amount);
+            strategies_[i].deposit(amount);
+        }
+        emit Rebalanced();
     }
 
     // ── Governance ───────────────────────────────────────────────────────────────────────────────
