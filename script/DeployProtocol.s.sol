@@ -10,7 +10,7 @@ import {GoalyMarkets} from "../src/GoalyMarkets.sol";
 import {MorphoStrategy} from "../src/strategies/MorphoStrategy.sol";
 import {GoalySettlement} from "../src/GoalySettlement.sol";
 import {ReserveManager} from "../src/ReserveManager.sol";
-import {IOFT} from "../src/interfaces/IOFT.sol";
+import {ITokenMessenger} from "../src/interfaces/ICCTP.sol";
 
 /// @notice Deploys the layered Goaly protocol behind UUPS proxies, wires least-privilege roles, then
 ///         hands DEFAULT_ADMIN to governance (Timelock + Safe) and renounces the deployer's. Split
@@ -99,10 +99,11 @@ contract DeployProtocol is Script {
     }
 
     function _reserve() internal {
-        address oft = vm.envOr("USDT0_OFT", address(0));
-        if (oft == address(0)) return;
+        address cctp = vm.envOr("CCTP_TOKEN_MESSENGER", address(0));
+        if (cctp == address(0)) return;
         address deployer = msg.sender;
-        ReserveManager reserve = new ReserveManager(IOFT(oft), deployer);
+        ReserveManager reserve =
+            new ReserveManager(ITokenMessenger(cctp), IERC20(vm.envAddress("USDC")), deployer);
         reserve.grantRole(reserve.KEEPER_ROLE(), vm.envAddress("AGENT"));
         _handoff(address(reserve), deployer);
         console2.log("ReserveManager", address(reserve));
