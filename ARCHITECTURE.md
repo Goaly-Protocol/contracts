@@ -80,10 +80,26 @@ forge script script/DeployProtocol.s.sol --rpc-url arbitrum --broadcast
 The script deploys both proxies + a strategy, wires the roles, then hands `DEFAULT_ADMIN` to governance
 and renounces the deployer's.
 
+## Contracts (full set)
+
+| Contract | Phase | Purpose |
+| --- | --- | --- |
+| `GoalyVault` | 1 | ERC-4626 UUPS allocator + liquidity buffer |
+| `GoalyMarkets` | 1 | no-loss prediction layer, solvency invariant |
+| `IStrategy` / `MorphoStrategy` | 1 | pluggable same-asset yield adapters |
+| `GoalyVault.rebalance` | 2 | agent sets multi-strategy weights in one tx |
+| `GoalySettlement` | 3 | optimistic settlement oracle (bond + dispute) |
+| `ReserveManager` / `IOFT` | 5 | bridge surplus-only cross-chain via USDT0 OFT |
+
 ## Roadmap
 
-- **Phase 1 (this)** — layered vault + markets + one same-asset strategy, invariant-tested, UUPS + roles.
-- **Phase 2** — multi-strategy allocation weights + the agent optimising them.
-- **Phase 3** — decentralised settlement oracle (UMA / Chainlink).
-- **Phase 4** — WDK chain-abstracted, gasless deposits.
-- **Phase 5** — `ReserveManager`: deploy *surplus only* cross-chain for higher yield (principal stays home).
+- ✅ **Phase 1** — layered vault + markets + same-asset strategy, invariant-tested, UUPS + roles.
+- ✅ **Phase 2** — `rebalance(strategies, targets)`: multi-strategy weights, buffer-safe, agent-driven.
+- ✅ **Phase 3** — `GoalySettlement`: optimistic, bonded, disputable settlement (no single-key oracle).
+- ⏳ **Phase 4** — WDK chain-abstracted, gasless deposits (app/wallet layer — no contract change; the
+  contracts already accept USDT0 from any depositor, WDK routes the multi-chain deposit into it).
+- ✅ **Phase 5** — `ReserveManager`: deploy *surplus only* cross-chain for higher yield (principal
+  stays home; keeper-gated; USDT0 OFT).
+
+18 tests pass (`forge test`) covering the no-loss invariant (unit + fuzz), strategy allocation, the
+optimistic settlement + dispute paths, and the reserve bridge.
