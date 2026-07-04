@@ -81,7 +81,7 @@ contract GoalySettlementTest is Test {
         settle.proposeResult(MKT, GoalyMarkets.Outcome.HOME, 20000);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + WINDOW); // dispute window elapses
+        vm.warp(block.timestamp + WINDOW + 1); // dispute window elapses
 
         uint256 before = usdt.balanceOf(proposer);
         settle.finalize(MKT);

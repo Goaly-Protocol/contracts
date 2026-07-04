@@ -6,6 +6,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyVault} from "../src/GoalyVault.sol";
+import {AllocationLib} from "../src/libraries/AllocationLib.sol";
 import {IStrategy} from "../src/interfaces/IStrategy.sol";
 import {MorphoStrategy} from "../src/strategies/MorphoStrategy.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
@@ -56,7 +57,7 @@ contract GoalyVaultStrategyTest is Test {
         assertEq(usdt.balanceOf(address(vault)), 100e6);
 
         vm.prank(agent);
-        vm.expectRevert(GoalyVault.BufferBreached.selector);
+        vm.expectRevert(AllocationLib.BufferBreached.selector);
         vault.allocate(strat, 1);
     }
 
