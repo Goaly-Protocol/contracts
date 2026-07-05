@@ -5,7 +5,6 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyPool} from "../src/GoalyPool.sol";
-import {ISwapRouter} from "../src/interfaces/ISwapRouter.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockERC4626} from "./mocks/MockERC4626.sol";
 import {MockSwapRouter} from "./mocks/MockSwapRouter.sol";

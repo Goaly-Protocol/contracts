@@ -6,8 +6,6 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {GoalyVault} from "../src/GoalyVault.sol";
-import {IStrategy} from "../src/interfaces/IStrategy.sol";
-import {ISwapRouter} from "../src/interfaces/ISwapRouter.sol";
 import {MorphoSwapStrategy} from "../src/strategies/MorphoSwapStrategy.sol";
 import {MockERC20} from "./mocks/MockERC20.sol";
 import {MockERC4626} from "./mocks/MockERC4626.sol";

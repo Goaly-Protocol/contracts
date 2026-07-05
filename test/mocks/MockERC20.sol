@@ -4,7 +4,10 @@ pragma solidity 0.8.24;
 contract MockERC20 {
     string public name;
     string public symbol;
-    uint8 public immutable decimals;
+    // NOTE: intentionally not `immutable`. The ERC20 standard mandates a lowercase `decimals()`
+    // getter, which the SCREAMING_SNAKE_CASE immutable naming lint would force us to break; a plain
+    // storage var keeps the required interface name.
+    uint8 public decimals;
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;

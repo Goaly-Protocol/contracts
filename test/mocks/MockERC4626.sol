@@ -2,25 +2,29 @@
 pragma solidity 0.8.24;
 
 import {MockERC20} from "./MockERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Minimal ERC-4626 vault for tests. `accrue()` inflates managed assets to simulate yield.
 contract MockERC4626 {
-    MockERC20 public immutable underlying;
+    using SafeERC20 for IERC20;
+
+    MockERC20 public immutable UNDERLYING;
     uint256 public totalShares;
     uint256 public totalManaged;
     mapping(address => uint256) public balanceOf;
 
     constructor(MockERC20 _underlying) {
-        underlying = _underlying;
+        UNDERLYING = _underlying;
     }
 
     function asset() external view returns (address) {
-        return address(underlying);
+        return address(UNDERLYING);
     }
 
     function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
         shares = totalShares == 0 ? assets : (assets * totalShares) / totalManaged;
-        underlying.transferFrom(msg.sender, address(this), assets);
+        IERC20(address(UNDERLYING)).safeTransferFrom(msg.sender, address(this), assets);
         totalManaged += assets;
         totalShares += shares;
         balanceOf[receiver] += shares;
@@ -34,7 +38,7 @@ contract MockERC4626 {
         balanceOf[owner] -= shares;
         totalShares -= shares;
         totalManaged -= assets;
-        underlying.transfer(receiver, assets);
+        IERC20(address(UNDERLYING)).safeTransfer(receiver, assets);
     }
 
     function redeem(uint256 shares, address receiver, address owner)
@@ -45,7 +49,7 @@ contract MockERC4626 {
         balanceOf[owner] -= shares;
         totalShares -= shares;
         totalManaged -= assets;
-        underlying.transfer(receiver, assets);
+        IERC20(address(UNDERLYING)).safeTransfer(receiver, assets);
     }
 
     function convertToAssets(uint256 shares) public view returns (uint256) {
@@ -66,7 +70,7 @@ contract MockERC4626 {
 
     /// @dev Test helper: mint extra underlying to the vault, raising share value (yield).
     function accrue(uint256 amount) external {
-        underlying.mint(address(this), amount);
+        UNDERLYING.mint(address(this), amount);
         totalManaged += amount;
     }
 }
