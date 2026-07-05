@@ -2,7 +2,7 @@
 
 ## Arbitrum One (chainId 42161)
 
-The layered v2 protocol, deployed behind UUPS proxies and verified on Arbiscan.
+The layered protocol, deployed behind UUPS proxies and verified on Arbiscan.
 
 | Contract | Address |
 | --- | --- |

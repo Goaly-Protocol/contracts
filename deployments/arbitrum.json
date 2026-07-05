@@ -1,16 +1,33 @@
 {
   "chainId": 42161,
   "network": "arbitrum-one",
-  "deployBlock": 479692780,
+  "deployBlock": 480301271,
   "contracts": {
-    "GoalyVault": "0xC5C51C530174857B7eCa715cFa275a0FBeaE0eb1",
-    "PredictionPool": "0x28D56B2512e2e77AF1d49e5E2290ea2EB4918A99",
-    "GoalyVaultComposer": "0xDb839c7100531b331D54C0C2cA81C971ae4eF31A"
+    "GoalyVault": "0xFe424b5b85C742C15CCB09d62873bE72577CD7Ef",
+    "GoalyMarkets": "0xFAcaD2Cbc3b6320239389aD5c2F597DeE95f1fd3",
+    "GoalySettlement": "0xC03BB9526D6F0308d8Ba0831e85f93db3E45e201",
+    "MorphoStrategy": "0x6951adCCd2106Bf364D62A1CC328070FC49609eA",
+    "MorphoSwapStrategy": "0xD12c112DA7D19266c5cBB9A9bde4Ee9e77D5393D",
+    "ReserveManager": "0xCe34457F70733191126726c1D1EeEb52Bcd20051",
+    "AllocationLib": "0x00d25e8c7ab0e42e29e21ed40592d10b2389ded2"
+  },
+  "implementations": {
+    "GoalyVault": "0x37612b385db08923db0207ddd9b9bf428caa3441",
+    "GoalyMarkets": "0x997cfb3121e15552d6d7efa6755a0e198442a1b6"
   },
   "external": {
     "USDT0": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
-    "morphoVault": "0x139250CdB310D657eAC506c7C7FC6AcDE34Af1ec",
-    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    "USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    "morphoStrategySource": "0x4739E2c293bDCD835829aA7c5d7fBdee93565D1a",
+    "cctpTokenMessenger": "0x19330d10D9Cc8751218eaf51E8885D058642E08A"
   },
-  "notes": "GoalyVault = goUSDT (ERC-20 receipt, 1:1 USDT0, migratable Morpho backing). PredictionPool stakes goUSDT; prizes in USDT0 from harvested yield, with an odds-boosted parimutuel (reserve-capped boost per settle)."
+  "config": {
+    "liquidityBufferBps": 1500,
+    "protocolFeeBps": 250,
+    "oddsBoostBps": 5000,
+    "settlementBondUsdt0": "10",
+    "disputeWindow": "2h",
+    "roles": "governance / oracle / agent / guardian = 0x3b4f0135465d444a5bd06ab90fc59b73916c85f5 (demo, single-key)"
+  },
+  "notes": "Layered protocol behind UUPS proxies, Arbiscan-verified. GoalyMarkets (predict/claim/settle) -> GoalyVault (ERC-4626 allocator + liquidity buffer) -> MorphoStrategy (same-asset USDT0) / MorphoSwapStrategy (cross-asset USDT0<->USDC). GoalySettlement = optimistic oracle (bonded propose -> dispute window -> finalize). ReserveManager bridges surplus-only cross-chain as USDC via Circle CCTP. Compiled without optimizer/via-IR; AllocationLib external library keeps the vault under 24 KB. Players stake/withdraw USDT0; yield can earn in USDT0 or USDC."
 }
