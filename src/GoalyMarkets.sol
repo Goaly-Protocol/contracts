@@ -4,11 +4,13 @@ pragma solidity 0.8.24;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {AccessControlUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {ReentrancyGuardTransient} from
-    "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {
+    AccessControlUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {
+    PausableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// @title GoalyMarkets
@@ -81,8 +83,12 @@ contract GoalyMarkets is
 
     event MarketCreated(bytes32 indexed marketId, uint64 closeTime);
     event Predicted(bytes32 indexed marketId, address indexed user, Outcome outcome, uint256 stake);
-    event MarketSettled(bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 prize);
-    event Claimed(bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize);
+    event MarketSettled(
+        bytes32 indexed marketId, Outcome result, uint256 winningStake, uint256 prize
+    );
+    event Claimed(
+        bytes32 indexed marketId, address indexed user, uint256 stakeReturned, uint256 prize
+    );
     event YieldHarvested(uint256 amount, uint256 reserve);
     event ReserveFunded(address indexed from, uint256 amount, uint256 reserve);
 
@@ -280,8 +286,7 @@ contract GoalyMarkets is
     function _boost(uint256 winningStake, uint256 oddsBps) internal view returns (uint256) {
         Layout storage $ = _layout();
         if (winningStake == 0 || oddsBps <= BPS) return 0;
-        uint256 uncapped =
-            (winningStake * (oddsBps - BPS) * $.boostBps) / (uint256(BPS) * BPS);
+        uint256 uncapped = (winningStake * (oddsBps - BPS) * $.boostBps) / (uint256(BPS) * BPS);
         return uncapped > $.reserve ? $.reserve : uncapped;
     }
 

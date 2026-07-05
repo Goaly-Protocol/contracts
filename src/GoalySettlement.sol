@@ -46,7 +46,9 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
     mapping(bytes32 => Proposal) public proposals;
 
     event MarketOpened(bytes32 indexed marketId, uint64 closeTime);
-    event Proposed(bytes32 indexed marketId, GoalyMarkets.Outcome outcome, uint256 oddsBps, address proposer);
+    event Proposed(
+        bytes32 indexed marketId, GoalyMarkets.Outcome outcome, uint256 oddsBps, address proposer
+    );
     event Disputed(bytes32 indexed marketId, address disputer);
     event Finalized(bytes32 indexed marketId, GoalyMarkets.Outcome outcome);
     event Resolved(bytes32 indexed marketId, GoalyMarkets.Outcome outcome, address bondWinner);

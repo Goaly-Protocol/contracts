@@ -24,7 +24,9 @@ contract ReserveManager is AccessControl, ReentrancyGuardTransient {
     IERC20 public immutable usdc;
     ITokenMessenger public immutable cctp; // Circle TokenMessenger (Wormhole-relayed CCTP)
 
-    event Bridged(uint32 indexed destinationDomain, bytes32 indexed to, uint256 amount, uint64 nonce);
+    event Bridged(
+        uint32 indexed destinationDomain, bytes32 indexed to, uint256 amount, uint64 nonce
+    );
     event Recalled(address indexed to, uint256 amount);
 
     constructor(ITokenMessenger cctp_, IERC20 usdc_, address governance) {

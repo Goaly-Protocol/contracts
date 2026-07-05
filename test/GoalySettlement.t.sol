@@ -33,8 +33,7 @@ contract GoalySettlementTest is Test {
                 new ERC1967Proxy(
                     address(new GoalyVault()),
                     abi.encodeCall(
-                        GoalyVault.initialize,
-                        (IERC20(address(usdt)), "gv", "gv", gov, 1000)
+                        GoalyVault.initialize, (IERC20(address(usdt)), "gv", "gv", gov, 1000)
                     )
                 )
             )
