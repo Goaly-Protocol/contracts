@@ -184,7 +184,14 @@ contract GoalyMarkets is
     function createMarket(bytes32 marketId, uint64 closeTime) external onlyRole(ORACLE_ROLE) {
         Layout storage $ = _layout();
         if ($.markets[marketId].status != Status.NONE) revert MarketExists();
-        $.markets[marketId] = Market(closeTime, Status.OPEN, Outcome.HOME, 0, 0, 0);
+        $.markets[marketId] = Market({
+            closeTime: closeTime,
+            status: Status.OPEN,
+            result: Outcome.HOME,
+            totalStake: 0,
+            winningStake: 0,
+            prize: 0
+        });
         emit MarketCreated(marketId, closeTime);
     }
 

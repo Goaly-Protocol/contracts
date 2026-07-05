@@ -22,10 +22,10 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
 
     bytes32 public constant PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
 
-    GoalyMarkets public immutable markets;
-    IERC20 public immutable bondToken;
-    uint256 public immutable bondAmount;
-    uint64 public immutable disputeWindow;
+    GoalyMarkets public immutable MARKETS;
+    IERC20 public immutable BOND_TOKEN;
+    uint256 public immutable BOND_AMOUNT;
+    uint64 public immutable DISPUTE_WINDOW;
 
     enum Phase {
         NONE,
@@ -67,16 +67,16 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
         uint64 disputeWindow_,
         address governance
     ) {
-        markets = markets_;
-        bondToken = bondToken_;
-        bondAmount = bondAmount_;
-        disputeWindow = disputeWindow_;
+        MARKETS = markets_;
+        BOND_TOKEN = bondToken_;
+        BOND_AMOUNT = bondAmount_;
+        DISPUTE_WINDOW = disputeWindow_;
         _grantRole(DEFAULT_ADMIN_ROLE, governance);
     }
 
     /// @notice Open a market for a fixture (the backend, holding PROPOSER_ROLE, mirrors the schedule).
     function openMarket(bytes32 marketId, uint64 closeTime) external onlyRole(PROPOSER_ROLE) {
-        markets.createMarket(marketId, closeTime);
+        MARKETS.createMarket(marketId, closeTime);
         emit MarketOpened(marketId, closeTime);
     }
 
@@ -85,12 +85,12 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
         external
         nonReentrant
     {
-        GoalyMarkets.Market memory m = markets.markets(marketId);
+        GoalyMarkets.Market memory m = MARKETS.markets(marketId);
         if (block.timestamp < m.closeTime) revert MatchNotOver();
         Proposal storage p = proposals[marketId];
         if (p.phase != Phase.NONE) revert AlreadyProposed();
 
-        bondToken.safeTransferFrom(msg.sender, address(this), bondAmount);
+        BOND_TOKEN.safeTransferFrom(msg.sender, address(this), BOND_AMOUNT);
         p.phase = Phase.PROPOSED;
         p.outcome = outcome;
         p.oddsBps = oddsBps;
@@ -103,9 +103,9 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
     function dispute(bytes32 marketId) external nonReentrant {
         Proposal storage p = proposals[marketId];
         if (p.phase != Phase.PROPOSED) revert NotProposed();
-        if (block.timestamp >= p.proposedAt + disputeWindow) revert WindowClosed();
+        if (block.timestamp >= p.proposedAt + DISPUTE_WINDOW) revert WindowClosed();
 
-        bondToken.safeTransferFrom(msg.sender, address(this), bondAmount);
+        BOND_TOKEN.safeTransferFrom(msg.sender, address(this), BOND_AMOUNT);
         p.phase = Phase.DISPUTED;
         p.disputer = msg.sender;
         emit Disputed(marketId, msg.sender);
@@ -116,11 +116,11 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
     function finalize(bytes32 marketId) external nonReentrant {
         Proposal storage p = proposals[marketId];
         if (p.phase != Phase.PROPOSED) revert NotProposed();
-        if (block.timestamp < p.proposedAt + disputeWindow) revert WindowOpen();
+        if (block.timestamp < p.proposedAt + DISPUTE_WINDOW) revert WindowOpen();
 
         p.phase = Phase.FINALIZED;
-        markets.settleMarket(marketId, p.outcome, p.oddsBps);
-        bondToken.safeTransfer(p.proposer, bondAmount);
+        MARKETS.settleMarket(marketId, p.outcome, p.oddsBps);
+        BOND_TOKEN.safeTransfer(p.proposer, BOND_AMOUNT);
         emit Finalized(marketId, p.outcome);
     }
 
@@ -136,9 +136,9 @@ contract GoalySettlement is AccessControl, ReentrancyGuardTransient {
         if (p.phase != Phase.DISPUTED) revert NotDisputed();
 
         p.phase = Phase.FINALIZED;
-        markets.settleMarket(marketId, outcome, oddsBps);
+        MARKETS.settleMarket(marketId, outcome, oddsBps);
         address winner = proposerWasRight ? p.proposer : p.disputer;
-        bondToken.safeTransfer(winner, bondAmount * 2);
+        BOND_TOKEN.safeTransfer(winner, BOND_AMOUNT * 2);
         emit Resolved(marketId, outcome, winner);
     }
 }

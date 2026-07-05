@@ -21,8 +21,8 @@ contract ReserveManager is AccessControl, ReentrancyGuardTransient {
 
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
 
-    IERC20 public immutable usdc;
-    ITokenMessenger public immutable cctp; // Circle TokenMessenger (Wormhole-relayed CCTP)
+    IERC20 public immutable USDC;
+    ITokenMessenger public immutable CCTP; // Circle TokenMessenger (Wormhole-relayed CCTP)
 
     event Bridged(
         uint32 indexed destinationDomain, bytes32 indexed to, uint256 amount, uint64 nonce
@@ -30,8 +30,8 @@ contract ReserveManager is AccessControl, ReentrancyGuardTransient {
     event Recalled(address indexed to, uint256 amount);
 
     constructor(ITokenMessenger cctp_, IERC20 usdc_, address governance) {
-        cctp = cctp_;
-        usdc = usdc_;
+        CCTP = cctp_;
+        USDC = usdc_;
         _grantRole(DEFAULT_ADMIN_ROLE, governance);
     }
 
@@ -43,19 +43,19 @@ contract ReserveManager is AccessControl, ReentrancyGuardTransient {
         nonReentrant
         returns (uint64 nonce)
     {
-        usdc.forceApprove(address(cctp), amount);
-        nonce = cctp.depositForBurn(amount, destinationDomain, to, address(usdc));
+        USDC.forceApprove(address(CCTP), amount);
+        nonce = CCTP.depositForBurn(amount, destinationDomain, to, address(USDC));
         emit Bridged(destinationDomain, to, amount, nonce);
     }
 
     /// @notice Governance pulls surplus back out (e.g. to fund prizes locally).
     function recall(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        usdc.safeTransfer(to, amount);
+        USDC.safeTransfer(to, amount);
         emit Recalled(to, amount);
     }
 
     /// @notice Surplus USDC currently parked here.
     function balance() external view returns (uint256) {
-        return usdc.balanceOf(address(this));
+        return USDC.balanceOf(address(this));
     }
 }

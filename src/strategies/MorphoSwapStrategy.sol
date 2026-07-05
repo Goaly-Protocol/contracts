@@ -19,19 +19,23 @@ contract MorphoSwapStrategy is IStrategy {
 
     uint16 internal constant BPS = 10_000;
 
-    IERC20 private immutable _asset; // USDT0 (the vault's asset)
-    IERC20 public immutable yieldAsset; // e.g. USDC
-    IERC4626 public immutable morpho; // the USDC Morpho vault
-    ISwapRouter public immutable router;
-    address public immutable vault;
-    uint24 public immutable poolFee; // Uniswap V3 fee tier for the stable pair
-    uint16 public immutable maxSlippageBps;
+    IERC20 private immutable _ASSET; // USDT0 (the vault's asset)
+    IERC20 public immutable YIELD_ASSET; // e.g. USDC
+    IERC4626 public immutable MORPHO; // the USDC Morpho vault
+    ISwapRouter public immutable ROUTER;
+    address public immutable VAULT;
+    uint24 public immutable POOL_FEE; // Uniswap V3 fee tier for the stable pair
+    uint16 public immutable MAX_SLIPPAGE_BPS;
 
     error OnlyVault();
 
     modifier onlyVault() {
-        if (msg.sender != vault) revert OnlyVault();
+        _onlyVault();
         _;
+    }
+
+    function _onlyVault() internal view {
+        if (msg.sender != VAULT) revert OnlyVault();
     }
 
     constructor(
@@ -42,72 +46,72 @@ contract MorphoSwapStrategy is IStrategy {
         uint24 poolFee_,
         uint16 maxSlippageBps_
     ) {
-        _asset = asset_;
-        morpho = morpho_;
-        yieldAsset = IERC20(morpho_.asset());
-        router = router_;
-        vault = vault_;
-        poolFee = poolFee_;
-        maxSlippageBps = maxSlippageBps_;
+        _ASSET = asset_;
+        MORPHO = morpho_;
+        YIELD_ASSET = IERC20(morpho_.asset());
+        ROUTER = router_;
+        VAULT = vault_;
+        POOL_FEE = poolFee_;
+        MAX_SLIPPAGE_BPS = maxSlippageBps_;
     }
 
     function asset() external view returns (IERC20) {
-        return _asset;
+        return _ASSET;
     }
 
     /// @dev The USDC position valued 1:1 in USDT0 (a stable pair). The tiny swap spread is covered by
     ///      the vault's buffer; the position's higher yield outgrows it over time.
     function totalAssets() public view returns (uint256) {
-        return morpho.convertToAssets(morpho.balanceOf(address(this)));
+        return MORPHO.convertToAssets(MORPHO.balanceOf(address(this)));
     }
 
     /// @dev Conservatively haircut by the max slippage so a subsequent exact-out withdraw always has
     ///      enough USDC to cover it — the vault never over-relies on this strategy for liquidity.
     function maxWithdraw() external view returns (uint256) {
-        return (morpho.maxWithdraw(address(this)) * (BPS - maxSlippageBps)) / BPS;
+        return (MORPHO.maxWithdraw(address(this)) * (BPS - MAX_SLIPPAGE_BPS)) / BPS;
     }
 
     function deposit(uint256 assets) external onlyVault {
-        _asset.safeTransferFrom(vault, address(this), assets);
-        uint256 usdcOut = _swapExactIn(_asset, yieldAsset, assets);
-        yieldAsset.forceApprove(address(morpho), usdcOut);
-        morpho.deposit(usdcOut, address(this));
+        _ASSET.safeTransferFrom(VAULT, address(this), assets);
+        uint256 usdcOut = _swapExactIn(_ASSET, YIELD_ASSET, assets);
+        YIELD_ASSET.forceApprove(address(MORPHO), usdcOut);
+        MORPHO.deposit(usdcOut, address(this));
     }
 
     function withdraw(uint256 assets) external onlyVault {
-        uint256 maxIn = (assets * (BPS + maxSlippageBps)) / BPS;
-        morpho.withdraw(maxIn, address(this), address(this));
-        uint256 spent = _swapExactOut(yieldAsset, _asset, assets, maxIn);
+        uint256 maxIn = (assets * (BPS + MAX_SLIPPAGE_BPS)) / BPS;
+        MORPHO.withdraw(maxIn, address(this), address(this));
+        uint256 spent = _swapExactOut(YIELD_ASSET, _ASSET, assets, maxIn);
         uint256 leftover = maxIn - spent;
         if (leftover > 0) {
-            yieldAsset.forceApprove(address(morpho), leftover);
-            morpho.deposit(leftover, address(this));
+            YIELD_ASSET.forceApprove(address(MORPHO), leftover);
+            MORPHO.deposit(leftover, address(this));
         }
-        _asset.safeTransfer(vault, assets);
+        _ASSET.safeTransfer(VAULT, assets);
     }
 
     function withdrawAll() external onlyVault returns (uint256 assets) {
-        uint256 shares = morpho.balanceOf(address(this));
+        uint256 shares = MORPHO.balanceOf(address(this));
         if (shares == 0) return 0;
-        uint256 usdc = morpho.redeem(shares, address(this), address(this));
-        assets = _swapExactIn(yieldAsset, _asset, usdc);
-        _asset.safeTransfer(vault, assets);
+        uint256 usdc = MORPHO.redeem(shares, address(this), address(this));
+        assets = _swapExactIn(YIELD_ASSET, _ASSET, usdc);
+        _ASSET.safeTransfer(VAULT, assets);
     }
 
     function _swapExactIn(IERC20 tokenIn, IERC20 tokenOut, uint256 amountIn)
         internal
         returns (uint256)
     {
-        tokenIn.forceApprove(address(router), amountIn);
-        return router.exactInputSingle(
+        tokenIn.forceApprove(address(ROUTER), amountIn);
+        return ROUTER.exactInputSingle(
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: address(tokenIn),
                 tokenOut: address(tokenOut),
-                fee: poolFee,
+                fee: POOL_FEE,
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: amountIn,
-                amountOutMinimum: (amountIn * (BPS - maxSlippageBps)) / BPS,
+                amountOutMinimum: (amountIn * (BPS - MAX_SLIPPAGE_BPS)) / BPS,
                 sqrtPriceLimitX96: 0
             })
         );
@@ -117,12 +121,12 @@ contract MorphoSwapStrategy is IStrategy {
         internal
         returns (uint256)
     {
-        tokenIn.forceApprove(address(router), amountInMax);
-        return router.exactOutputSingle(
+        tokenIn.forceApprove(address(ROUTER), amountInMax);
+        return ROUTER.exactOutputSingle(
             ISwapRouter.ExactOutputSingleParams({
                 tokenIn: address(tokenIn),
                 tokenOut: address(tokenOut),
-                fee: poolFee,
+                fee: POOL_FEE,
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountOut: amountOut,

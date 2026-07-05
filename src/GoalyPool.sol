@@ -29,7 +29,7 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     uint256 internal constant BPS = 10_000;
 
     /// @notice Canonical accounting token (USDT0). Stakes + prizes are denominated in it.
-    IERC20 public immutable asset;
+    IERC20 public immutable ASSET;
     /// @notice Morpho vault the idle stake capital earns in (migratable).
     IERC4626 public yieldVault;
     /// @notice Underlying asset of `yieldVault` — USDT0, or another stablecoin when cross-asset.
@@ -39,9 +39,9 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     uint24 public swapFee;
     uint256 public maxSlippageBps;
 
-    uint16 public immutable feeBps;
+    uint16 public immutable FEE_BPS;
     /// @notice Odds boost factor in bps (5_000 = 0.5×). Bigger odds → bigger boost.
-    uint16 public immutable boostBps;
+    uint16 public immutable BOOST_BPS;
 
     /// @notice USDT0 principal currently staked across all open + settled-unclaimed markets.
     uint256 public totalStaked;
@@ -122,14 +122,14 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     ) {
         if (_yieldVault.asset() != address(_asset)) revert AssetMismatch();
         if (_feeBps > BPS || _maxSlippageBps > BPS) revert AssetMismatch();
-        asset = _asset;
+        ASSET = _asset;
         yieldVault = _yieldVault;
         yieldAsset = _asset;
         swapRouter = _swapRouter;
         swapFee = _swapFee;
         maxSlippageBps = _maxSlippageBps;
-        feeBps = _feeBps;
-        boostBps = _boostBps;
+        FEE_BPS = _feeBps;
+        BOOST_BPS = _boostBps;
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(ORACLE_ROLE, msg.sender);
         _grantRole(MANAGER_ROLE, msg.sender);
@@ -154,9 +154,9 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
         if (stakeOf[marketId][msg.sender] != 0) revert AlreadyPredicted();
 
         token.safeTransferFrom(msg.sender, address(this), amount);
-        stake = address(token) == address(asset)
+        stake = address(token) == address(ASSET)
             ? amount
-            : _swapExactIn(token, asset, amount, minStake);
+            : _swapExactIn(token, ASSET, amount, minStake);
         _deployToYield(stake);
 
         totalStaked += stake;
@@ -175,7 +175,7 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
         uint256 stake = stakeOf[marketId][user];
         if (stake == 0 || market.winningStake == 0 || market.prize == 0) return 0;
         uint256 gross = (market.prize * stake) / market.winningStake;
-        return gross - (gross * feeBps) / BPS;
+        return gross - (gross * FEE_BPS) / BPS;
     }
 
     /// @notice Reclaim your stake (always, no-loss) plus your prize (if you won), paid out in
@@ -199,9 +199,9 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
         _redeemFromYield(stakeReturned);
         uint256 usdt0Out = stakeReturned + prize;
 
-        uint256 sent = address(outToken) == address(asset)
+        uint256 sent = address(outToken) == address(ASSET)
             ? usdt0Out
-            : _swapExactIn(asset, outToken, usdt0Out, minOut);
+            : _swapExactIn(ASSET, outToken, usdt0Out, minOut);
         outToken.safeTransfer(msg.sender, sent);
         emit Claimed(marketId, msg.sender, address(outToken), stakeReturned, prize);
     }
@@ -210,7 +210,14 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
 
     function createMarket(bytes32 marketId, uint64 closeTime) external onlyRole(ORACLE_ROLE) {
         if (markets[marketId].status != Status.NONE) revert MarketExists();
-        markets[marketId] = Market(closeTime, Status.OPEN, Outcome.HOME, 0, 0, 0);
+        markets[marketId] = Market({
+            closeTime: closeTime,
+            status: Status.OPEN,
+            result: Outcome.HOME,
+            totalStake: 0,
+            winningStake: 0,
+            prize: 0
+        });
         emit MarketCreated(marketId, closeTime);
     }
 
@@ -242,8 +249,8 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
         view
         returns (uint256)
     {
-        if (winningStake == 0 || winningOddsBps <= BPS || boostBps == 0) return 0;
-        uint256 uncapped = (winningStake * (winningOddsBps - BPS) * boostBps) / (BPS * BPS);
+        if (winningStake == 0 || winningOddsBps <= BPS || BOOST_BPS == 0) return 0;
+        uint256 uncapped = (winningStake * (winningOddsBps - BPS) * BOOST_BPS) / (BPS * BPS);
         return uncapped > reserve ? reserve : uncapped;
     }
 
@@ -251,7 +258,7 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     function fundPrize(bytes32 marketId, uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
         if (markets[marketId].status == Status.NONE) revert MarketNotOpen();
-        asset.safeTransferFrom(msg.sender, address(this), amount);
+        ASSET.safeTransferFrom(msg.sender, address(this), amount);
         markets[marketId].prize += amount;
         emit PrizeFunded(marketId, amount);
     }
@@ -259,7 +266,7 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     /// @notice Top up the odds-boost / prize reserve with USDT0.
     function fundReserve(uint256 amount) external {
         if (amount == 0) revert ZeroAmount();
-        asset.safeTransferFrom(msg.sender, address(this), amount);
+        ASSET.safeTransferFrom(msg.sender, address(this), amount);
         reserve += amount;
         emit ReserveFunded(msg.sender, amount, reserve);
     }
@@ -337,9 +344,9 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
 
     /// @dev Supply `usdt0Amount` of USDT0 to Morpho (swapping into the yield asset if cross-asset).
     function _deployToYield(uint256 usdt0Amount) internal {
-        uint256 deployable = address(yieldAsset) == address(asset)
+        uint256 deployable = address(yieldAsset) == address(ASSET)
             ? usdt0Amount
-            : _swapExactIn(asset, yieldAsset, usdt0Amount, 0);
+            : _swapExactIn(ASSET, yieldAsset, usdt0Amount, 0);
         yieldAsset.forceApprove(address(yieldVault), deployable);
         yieldVault.deposit(deployable, address(this));
     }
@@ -348,13 +355,13 @@ contract GoalyPool is AccessControl, ReentrancyGuard, Pausable {
     ///      the USDT0 realised (== usdt0Amount).
     function _redeemFromYield(uint256 usdt0Amount) internal returns (uint256) {
         if (usdt0Amount == 0) return 0;
-        if (address(yieldAsset) == address(asset)) {
+        if (address(yieldAsset) == address(ASSET)) {
             yieldVault.withdraw(usdt0Amount, address(this), address(this));
             return usdt0Amount;
         }
         uint256 maxIn = (usdt0Amount * (BPS + maxSlippageBps)) / BPS;
         yieldVault.withdraw(maxIn, address(this), address(this));
-        uint256 spent = _swapExactOut(yieldAsset, asset, usdt0Amount, maxIn);
+        uint256 spent = _swapExactOut(yieldAsset, ASSET, usdt0Amount, maxIn);
         uint256 leftover = maxIn - spent;
         if (leftover > 0) {
             yieldAsset.forceApprove(address(yieldVault), leftover);

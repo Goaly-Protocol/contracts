@@ -14,49 +14,53 @@ import {IStrategy} from "../interfaces/IStrategy.sol";
 contract MorphoStrategy is IStrategy {
     using SafeERC20 for IERC20;
 
-    IERC20 private immutable _asset; // USDT0
-    IERC4626 public immutable morpho; // underlying Morpho USDT0 vault
-    address public immutable vault; // the GoalyVault (sole caller)
+    IERC20 private immutable _ASSET; // USDT0
+    IERC4626 public immutable MORPHO; // underlying Morpho USDT0 vault
+    address public immutable VAULT; // the GoalyVault (sole caller)
 
     error OnlyVault();
 
     modifier onlyVault() {
-        if (msg.sender != vault) revert OnlyVault();
+        _onlyVault();
         _;
     }
 
+    function _onlyVault() internal view {
+        if (msg.sender != VAULT) revert OnlyVault();
+    }
+
     constructor(IERC4626 morpho_, address vault_) {
-        morpho = morpho_;
-        vault = vault_;
-        _asset = IERC20(morpho_.asset());
+        MORPHO = morpho_;
+        VAULT = vault_;
+        _ASSET = IERC20(morpho_.asset());
     }
 
     function asset() external view returns (IERC20) {
-        return _asset;
+        return _ASSET;
     }
 
     function totalAssets() public view returns (uint256) {
-        return morpho.convertToAssets(morpho.balanceOf(address(this)));
+        return MORPHO.convertToAssets(MORPHO.balanceOf(address(this)));
     }
 
     function maxWithdraw() external view returns (uint256) {
-        return morpho.maxWithdraw(address(this));
+        return MORPHO.maxWithdraw(address(this));
     }
 
     function deposit(uint256 assets) external onlyVault {
-        _asset.safeTransferFrom(vault, address(this), assets);
-        _asset.forceApprove(address(morpho), assets);
-        morpho.deposit(assets, address(this));
+        _ASSET.safeTransferFrom(VAULT, address(this), assets);
+        _ASSET.forceApprove(address(MORPHO), assets);
+        MORPHO.deposit(assets, address(this));
     }
 
     /// @dev Sends `assets` USDT0 straight back to the vault. Reverts (via Morpho) if it exceeds
     ///      the live withdrawable liquidity — never a partial/silent fill.
     function withdraw(uint256 assets) external onlyVault {
-        morpho.withdraw(assets, vault, address(this));
+        MORPHO.withdraw(assets, VAULT, address(this));
     }
 
     function withdrawAll() external onlyVault returns (uint256 assets) {
-        uint256 shares = morpho.balanceOf(address(this));
-        if (shares != 0) assets = morpho.redeem(shares, vault, address(this));
+        uint256 shares = MORPHO.balanceOf(address(this));
+        if (shares != 0) assets = MORPHO.redeem(shares, VAULT, address(this));
     }
 }
